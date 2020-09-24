@@ -1,0 +1,19 @@
+{
+  "name": "render",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "serve": "vue-cli-service serve",
+    "build": "vue-cli-service build"
+  },
+  "dependencies": {
+    "vue": "^3.0.0-0",
+    "js-yaml": "^3.14.0"
+  },
+  "devDependencies": {
+    "@vue/cli-service": "~4.5.0",
+    "@vue/compiler-sfc": "^3.0.0-0",
+    "node-sass": "^4.14.1",
+    "sass-loader": "^10.0.2"
+  }
+}
