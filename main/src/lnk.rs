@@ -89,7 +89,7 @@ pub fn resolve(lnk: &ShellLink) -> String {
     }
 }
 
-pub fn extract_ico(lnk: &ShellLink) -> Vec<u8> {
+pub fn extract_ico(lnk: &ShellLink) -> Option<Vec<u8>> {
     let icon_path = if let Some(icon_path) = &lnk.icon_location {
         // println!("icon A");
         expand_environment_data(icon_path)
@@ -108,7 +108,7 @@ pub fn extract_ico(lnk: &ShellLink) -> Vec<u8> {
             .read_to_end(&mut data)
             .unwrap();
 
-        data
+        Some(data)
     } else {
         let libpath: Vec<_> = icon_path.encode_utf16().chain(std::iter::once(0)).collect();
         let libmodule = unsafe {
@@ -167,7 +167,7 @@ pub fn extract_ico(lnk: &ShellLink) -> Vec<u8> {
                     EnumResourceNamesW(libmodule, 14 as _, Some(iter_fn), lparam);
                 }
 
-                load_resource(libmodule, icon_id as _, 14).unwrap()
+                load_resource(libmodule, icon_id as _, 14)?
             }
         };
 
@@ -183,14 +183,14 @@ pub fn extract_ico(lnk: &ShellLink) -> Vec<u8> {
             file_header.store(image_header);
             file_header.store(6 + 16 * image_count as u32 + file_blob.len() as u32);
 
-            let image = load_resource(libmodule, image_id as _, 3).unwrap();
+            let image = load_resource(libmodule, image_id as _, 3)?;
             file_blob.extend_from_slice(image);
         }
 
         unsafe { FreeLibrary(libmodule) };
 
         file_header.append(&mut file_blob);
-        file_header
+        Some(file_header)
     }
 }
 

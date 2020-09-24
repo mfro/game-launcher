@@ -1,13 +1,20 @@
 <template>
   <div class="root">
     <div class="input-container" :style="style">
-      <input
-        ref="input"
-        type="text"
-        spellcheck="false"
-        v-model="input"
-        v-on:keydown.enter="submit()"
-      />
+      <div class="pseudo-box">
+        <!-- <div class="input-pseudo">
+          <span>{{ input }}</span>
+          <div class="caret" />
+        </div> -->
+
+        <input
+          ref="input"
+          type="text"
+          spellcheck="false"
+          v-model="input"
+          v-on:keydown.enter="submit()"
+        />
+      </div>
 
       <div class="logo" v-if="logoStyle" :style="logoStyle" />
     </div>
@@ -108,9 +115,7 @@ export default {
         return 0;
       });
 
-      console.log(...matches);
-
-      return matches[0][1];
+      return matches[0] && matches[0][1];
     },
 
     style() {
@@ -203,24 +208,57 @@ export default {
 
   transition: all 250ms;
 
-  > input {
+  .pseudo-box {
     flex: 1 1 0;
     width: 100%;
     padding: 12px 16px 12px 0;
     box-sizing: border-box;
+
+    font-size: 24px;
+    font-family: Google Sans;
+    font-weight: 500;
+  }
+
+  // .input-pseudo {
+  //   position: absolute;
+  //   text-indent: 16px;
+  //   white-space: pre;
+  //   display: flex;
+  //   align-items: center;
+
+  //   .caret {
+  //     width: 0.8ch;
+  //     height: 2px;
+  //     background-color: currentColor;
+  //     opacity: 0.8;
+  //     margin: 6px 0;
+  //     align-self: flex-end;
+  //   }
+  //   // &::after {
+  //   //   content: '';
+  //   //   width: 2px;
+  //   //   height: 1em;
+  //   //   background-color: red;
+  //   // }
+  // }
+
+  input {
+    width: 100%;
+    padding: 0;
 
     -webkit-appearance: none;
     border: none;
     outline: none;
     background: none;
 
-    font-size: 24px;
-    font-family: Google Sans;
-    font-weight: 500;
+    // color: inherit;
+    // font-size: inherit;
+    // font-family: inherit;
+    // font-weight: inherit;
 
-    color: inherit;
-    caret-color: transparent;
+    // opacity: 0;
 
+    // caret-color: transparent;
     text-indent: 16px;
   }
 

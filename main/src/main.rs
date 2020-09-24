@@ -1,10 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 extern crate bitflags;
-extern crate byteorder;
 extern crate cef;
 extern crate lazy_static;
-extern crate parselnk;
 extern crate percent_encoding;
 extern crate winapi;
 
@@ -63,7 +61,10 @@ impl SchemeHandlerFactory for MySchemeHandlerFactory {
             let mut raw = vec![];
             File::open(lnk_path).unwrap().read_to_end(&mut raw).unwrap();
             let lnk = ShellLink::load(&raw);
-            let data = lnk::extract_ico(&lnk);
+            let data = match lnk::extract_ico(&lnk) {
+                Some(vec) => vec,
+                None => vec![],
+            };
 
             Some(CefResourceHandler::new(InMemoryResourceHandler {
                 mime_type: Some("image/x-icon".into()),
