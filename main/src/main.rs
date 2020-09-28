@@ -24,8 +24,8 @@ use winapi::{
         uxtheme::MARGINS,
         winuser::{
             keybd_event, SetFocus, SetForegroundWindow, SetWindowLongPtrA, GWL_EXSTYLE, GWL_STYLE,
-            WM_KEYDOWN, WM_KEYUP, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
-            WS_VISIBLE,
+            VK_LWIN, VK_RETURN, WM_KEYDOWN, WM_KEYUP, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+            WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
         },
     },
 };
@@ -653,7 +653,7 @@ fn main() {
         .set_background_color(CefColor::new(0x00, 0x00, 0, 0))
         .build();
 
-    let size = (480 + 200, 48 + 200);
+    let size = (480 + 200, 480 + 200);
 
     let main_window_info = CefWindowInfo::default()
         .set_style(WS_POPUP)
@@ -665,7 +665,7 @@ fn main() {
         .set_window_name("games")
         .build();
 
-    let url = match option_env!("DEBUG_RENDER").is_some() {
+    let url = match std::env::var("DEBUG_RENDER").is_ok() {
         true => "http://localhost:8080/index.html",
         false => "app://app/index.html",
     };
@@ -716,7 +716,7 @@ fn main() {
         } else if ty == WM_KEYDOWN {
             held.insert(info.vkCode);
 
-            if info.vkCode == 32 && held.contains(&91) {
+            if info.vkCode == VK_RETURN as u32 && held.contains(&(VK_LWIN as u32)) {
                 let frame = browser.get_main_frame().unwrap();
                 let msg = CefProcessMessage::create(&"hook".into()).unwrap();
 
