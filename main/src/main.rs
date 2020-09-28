@@ -23,9 +23,9 @@ use winapi::{
         shellapi::ShellExecuteW,
         uxtheme::MARGINS,
         winuser::{
-            keybd_event, SetFocus, SetForegroundWindow, SetWindowLongPtrA, GWL_EXSTYLE, GWL_STYLE,
-            VK_LWIN, VK_RETURN, WM_KEYDOWN, WM_KEYUP, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-            WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
+            keybd_event, GetForegroundWindow, SetFocus, SetForegroundWindow, SetWindowLongPtrA,
+            GWL_EXSTYLE, GWL_STYLE, VK_LWIN, VK_RETURN, WM_KEYDOWN, WM_KEYUP, WS_EX_TOOLWINDOW,
+            WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
         },
     },
 };
@@ -36,6 +36,10 @@ mod hook;
 pub mod lnk;
 
 use lnk::ShellLink;
+
+lazy_static::lazy_static! {
+    static ref PREVIOUS: std::sync::Mutex<std::cell::Cell<Option<usize>>> = Default::default();
+}
 
 thread_local! {
     static HOOK_CALLBACKS: RefCell<Vec<CefV8Value>> = Default::default();
@@ -245,7 +249,7 @@ impl Client for MyClient {
         let args = message.get_argument_list().unwrap();
 
         if name == "toggle_window" {
-            let visible = args.get_bool(0);
+            let visible = args.get_int(0) as usize;
 
             let host = browser.get_host().unwrap();
             let hwnd = host.get_window_handle() as HWND;
@@ -494,13 +498,13 @@ impl V8Handler for ToggleFunction {
     ) -> bool {
         if arguments.len() != 1 {
             *exception = "invalid arguments".into();
-        } else if !arguments[0].is_bool() {
+        } else if !arguments[0].is_uint() {
             *exception = "invalid arguments".into();
         } else {
             let msg = CefProcessMessage::create(&"toggle_window".into()).unwrap();
             let args = msg.get_argument_list().unwrap();
 
-            args.set_bool(0, arguments[0].get_bool_value());
+            args.set_int(0, arguments[0].get_uint_value() as _);
 
             self.0.send_process_message(CefProcessId::BROWSER, msg);
         }
@@ -509,16 +513,21 @@ impl V8Handler for ToggleFunction {
     }
 }
 
-fn toggle(hwnd: HWND, visible: bool) {
+fn toggle(hwnd: HWND, action: usize) {
     let base_style = WS_POPUP;
     let base_ex_style = WS_EX_TOOLWINDOW;
 
-    if visible {
+    if action == 1 {
         unsafe {
             let x = hwnd as usize;
 
             SetWindowLongPtrA(hwnd, GWL_STYLE, (base_style | WS_VISIBLE) as _);
             SetWindowLongPtrA(hwnd, GWL_EXSTYLE, base_ex_style as _);
+
+            PREVIOUS
+                .lock()
+                .unwrap()
+                .set(Some(GetForegroundWindow() as _));
 
             std::thread::spawn(move || {
                 keybd_event(0x12, 0, 1, 0);
@@ -533,6 +542,17 @@ fn toggle(hwnd: HWND, visible: bool) {
         unsafe {
             SetWindowLongPtrA(hwnd, GWL_STYLE, base_style as _);
             SetWindowLongPtrA(hwnd, GWL_EXSTYLE, (base_ex_style | WS_EX_TRANSPARENT) as _);
+
+            if action == 2 {
+                if let Some(prev) = PREVIOUS.lock().unwrap().take() {
+                    keybd_event(0x12, 0, 1, 0);
+
+                    SetForegroundWindow(prev as _);
+                    SetFocus(prev as _);
+
+                    keybd_event(0x12, 0, 3, 0);
+                }
+            }
         }
     }
 }
@@ -653,13 +673,13 @@ fn main() {
         .set_background_color(CefColor::new(0x00, 0x00, 0, 0))
         .build();
 
-    let size = (480 + 200, 480 + 200);
+    let size = (480 + 200, 1000);
 
     let main_window_info = CefWindowInfo::default()
         .set_style(WS_POPUP)
         .set_ex_style(WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_TOPMOST)
         .set_x((1920 - size.0) / 2)
-        .set_y((1080 - size.1) / 2)
+        .set_y(0)
         .set_width(size.0)
         .set_height(size.1)
         .set_window_name("games")

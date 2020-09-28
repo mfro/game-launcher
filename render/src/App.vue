@@ -1,112 +1,63 @@
 <template>
   <div class="root">
-    <div class="input-container" :style="style">
-      <div class="pseudo-box">
-        <!-- <div class="input-pseudo">
-          <span>{{ input }}</span>
-          <div class="caret" />
-        </div> -->
+    <div class="window" :style="windowStyle">
+      <div class="background" :style="menuStyle" />
 
+      <div class="search-bar">
         <input
           ref="input"
           type="text"
           spellcheck="false"
-          v-model="input"
+          :value="inputDisplay"
+          @input="onInput"
           v-on:keydown.enter="submit()"
+          :class="{ overlay: selected != null }"
         />
       </div>
 
-      <div class="logo" v-if="logoStyle" :style="logoStyle" />
+      <div class="results" :style="menuStyle">
+        <result
+          v-for="(result, i) in visibleMatches"
+          :key="i"
+          :result="result"
+          :selected="result == selected"
+          :input="input"
+        />
+      </div>
     </div>
   </div>
 </template>
 
 <script>
-import yaml from 'js-yaml';
-import { reactive } from 'vue';
+import { watchEffect } from 'vue';
 
-let instance;
-const state = reactive({
-  apps: [],
-  links: [],
-  visible: false,
-});
+import Result from './Result.vue';
+import { hide, state, entry_match, entry_display } from './app';
 
-function on_hook() {
-  config_toggle(true);
-  state.visible = true;
-}
-
-function on_config(raw, links) {
-  let config = yaml.safeLoad(raw);
-
-  if (Array.isArray(config)) {
-    for (let entry of config) {
-      state.apps.push(entry);
-    }
-  }
-
-  for (let link of links) {
-    state.links.push(link);
-  }
-}
-
-config_attach(on_config, on_hook);
-
-function hide(callback) {
-  if (state.visible) {
-    state.visible = false;
-    setTimeout(() => {
-      config_toggle(false);
-      instance.input = '';
-      callback && callback()
-    }, 300);
-  }
-}
-
-window.addEventListener('blur', e => hide());
-
-window.addEventListener('keydown', e => {
-  if (e.keyCode == 27) hide();
-});
-
-function match_string(search, value) {
-  let i = value.toLowerCase().indexOf(search);
-  if (i == -1) return null;
-  return [i, value.length];
-}
+const MENU_SIZE = 7;
 
 export default {
   name: 'app',
 
+  components: {
+    Result,
+  },
+
   data() {
     return {
+      index: 0,
       input: '',
+      animate: false,
     };
   },
 
   computed: {
-    match() {
-      if (this.input.length < 3)
-        return;
+    matches() {
+      let search = this.input.toLowerCase();
 
-      let input = this.input.toLowerCase();
-
-      let matches = [];
-      for (let app of state.apps) {
-        let match = match_string(input, app.name);
-        if (match === null) continue;
-        matches.push([match, app]);
-      }
-
-      for (let link of state.links) {
-        for (let name of link.names) {
-          let match = match_string(input, name);
-          if (match === null) continue;
-          matches.push([match, link]);
-          break;
-        }
-      }
+      let matches = state.entries
+        .map(e => [entry_match(search, e), e])
+        .filter(pair => pair[0] != null);
 
       matches.sort((a, b) => {
         for (let i = 0; i < a[0].length; ++i)
@@ -115,70 +66,123 @@ export default {
         return 0;
       });
 
-      return matches[0] && matches[0][1];
+      return matches.map((pair) => pair[1]);
     },
 
-    style() {
+    visibleMatches() {
+      return this.matches.slice(0, MENU_SIZE);
+    },
+
+    selected() {
+      if (this.matches.length == 0)
+        return null;
+      return this.visibleMatches[this.selectedIndex];
+    },
+
+    selectedIndex() {
+      let limit = Math.min(this.matches.length, MENU_SIZE);
+      if (limit == 0)
+        return 0;
+      let index = this.index % limit;
+      if (index < 0)
+        index += limit;
+      return index;
+    },
+
+    windowStyle() {
       let style = {
         'opacity': state.visible ? 1 : 0,
       };
 
-      if (this.match) {
-        style = {
-          ...style,
-          'color': this.match.foreground,
-          'background-color': this.match.background,
-        }
-      }
+      // if (this.match) {
+      //   style = {
+      //     ...style,
+      //     'color': this.match.foreground,
+      //     'background-color': this.match.background,
+      //   }
+      // }
 
       return style;
     },
 
-    logoStyle() {
-      let style = {
-        'opacity': 0,
+    menuStyle() {
+      return {
+        top: `${this.selectedIndex * -54}px`,
+        transition: this.animate ? 'all 200ms ease-in-out' : '',
       };
+    },
 
-      if (this.match) {
-        let path;
-        if (this.match.icon)
-          path = `app://icons/${this.match.icon}`;
-        else if ('names' in this.match)
-          path = `app://link/${this.match.path}`;
-        else
-          path = `app://icons/${this.match.name}.png`;
-        path = encodeURI(path)
-
-        style = {
-          ...style,
-          'opacity': 1,
-          'background-image': `url(${path})`,
-        };
-      }
-
-      return style;
+    inputDisplay() {
+      if (this.selected)
+        return entry_display(this.selected).slice(0, this.input.length);
+      return this.input;
     },
   },
 
   created() {
-    instance = this;
-    window.addEventListener('focus', e => {
-      this.$refs.input.focus();
+    state.instance = this;
+
+    watchEffect(() => {
+      this.index = Math.max(0, Math.min(this.visibleMatches.length - 1, this.index));
     });
   },
 
   methods: {
+    reset() {
+      this.input = '';
+      this.index = 0;
+    },
+
     submit() {
       let args;
-      if ('names' in this.match)
-        args = [this.match.path];
+      if ('names' in this.selected)
+        args = [this.selected.path];
       else
-        args = [[...this.match.target]];
+        args = [this.selected.target];
+
       config_launch(...args);
 
-      hide(() => {
-        // config_launch(...args);
-      });
+      hide(false);
+    },
+
+    onInput(e) {
+      let str = e.target.value;
+      let start = Math.min(str.length, this.inputDisplay.length);
+      for (let i = 0; i < start; ++i) {
+        if (str[i] != this.inputDisplay[i]) {
+          start = i;
+          break;
+        }
+      }
+
+      let end1 = str.length;
+      let end2 = this.inputDisplay.length;
+      for (let i1 = start; i1 < str.length; ++i1) {
+        for (let i2 = start; i2 < this.inputDisplay.length; ++i2) {
+          if (str.slice(i1) == this.inputDisplay.slice(i2)) {
+            end1 = i1;
+            end2 = i2;
+            break;
+          }
+        }
+      }
+
+      // console.log(start, end1, end2, this.$refs.input.selectionStart);
+      this.input = this.input.slice(0, start) + str.slice(start, end1) + this.input.slice(end2);
+      this.animate = false;
+
+      let caret = this.$refs.input.selectionStart;
+      setTimeout(() => {
+        this.$refs.input.selectionStart = caret;
+        this.$refs.input.selectionEnd = caret;
+      }, 1);
+    },
+
+    select(delta) {
+      let index = (this.index + delta) % this.visibleMatches.length;
+      if (index < 0) index += this.visibleMatches.length;
+      this.index = index;
+      this.animate = true;
     },
   },
 };
@@ -189,87 +193,66 @@ export default {
   width: 100vw;
   height: 100vh;
 
+  padding-top: (54px * 7);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
 }
 
-.input-container {
-  color: #333;
+.window {
+  position: relative;
+  width: 640px;
+  transition: all 200ms ease-in-out;
+}
 
-  width: 480px;
+.background {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  border-radius: 5px;
+  background-color: #bdbdbd;
+  box-shadow: 0 0 10px -5px currentColor;
+}
+
+.results {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.search-bar {
+  width: 100%;
+
+  top: 0;
+  left: 0;
+
+  position: absolute;
   border-radius: 5px;
   background-color: white;
-  overflow: hidden;
+  box-shadow: 0 0 10px -5px currentColor;
 
   display: flex;
 
-  box-shadow: 0 0 10px -5px currentColor;
-
-  transition: all 250ms;
-
-  .pseudo-box {
-    flex: 1 1 0;
-    width: 100%;
-    padding: 12px 16px 12px 0;
-    box-sizing: border-box;
-
-    font-size: 24px;
-    font-family: Google Sans;
-    font-weight: 500;
-  }
-
-  // .input-pseudo {
-  //   position: absolute;
-  //   text-indent: 16px;
-  //   white-space: pre;
-  //   display: flex;
-  //   align-items: center;
-
-  //   .caret {
-  //     width: 0.8ch;
-  //     height: 2px;
-  //     background-color: currentColor;
-  //     opacity: 0.8;
-  //     margin: 6px 0;
-  //     align-self: flex-end;
-  //   }
-  //   // &::after {
-  //   //   content: '';
-  //   //   width: 2px;
-  //   //   height: 1em;
-  //   //   background-color: red;
-  //   // }
-  // }
-
   input {
-    width: 100%;
-    padding: 0;
+    flex: 1 1 0;
+    position: relative;
+    z-index: 1;
 
+    padding: 12px 16px;
+    box-sizing: border-box;
     -webkit-appearance: none;
     border: none;
     outline: none;
     background: none;
 
-    // color: inherit;
-    // font-size: inherit;
-    // font-family: inherit;
-    // font-weight: inherit;
+    font-size: 24px;
+    font-family: Google Sans;
+    font-weight: 500;
 
-    // opacity: 0;
-
-    // caret-color: transparent;
-    text-indent: 16px;
-  }
-
-  .logo {
-    flex: 0 0 auto;
-    width: 48px;
-    height: 48px;
-    background-size: contain;
-    margin: 3px 16px;
-
-    transition: all 250ms;
+    &.overlay {
+      color: transparent;
+      caret-color: #333;
+    }
   }
 }
 </style>
@@ -281,5 +264,9 @@ html {
   height: 100vh;
   margin: 0;
   overflow: hidden;
+}
+
+head {
+  display: none;
 }
 </style>
