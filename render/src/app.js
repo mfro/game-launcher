@@ -1,5 +1,5 @@
 import yaml from 'js-yaml';
-import { reactive } from 'vue';
+import { markRaw, reactive } from 'vue';
 
 export const state = reactive({
     entries: [],
@@ -13,18 +13,7 @@ function on_hook() {
 }
 
 function on_config(raw, links) {
-    let config = yaml.safeLoad(raw);
-    state.entries = [];
-
-    if (Array.isArray(config)) {
-        for (let entry of config) {
-            state.entries.push(entry);
-        }
-    }
-
-    for (let link of links) {
-        state.entries.push(link);
-    }
+    state.entries = raw.map(entry => markRaw(entry));
 }
 
 config_attach(on_config, on_hook);
@@ -61,25 +50,10 @@ export function hide(restore, callback) {
 }
 
 export function entry_match(search, entry) {
-    if ('names' in entry) {
-        for (let value of entry.names)
-            if (value.toLowerCase().startsWith(search))
-                return [0, value.length];
-    } else {
-        if (entry.name.toLowerCase().startsWith(search))
-            return [0, value.length];
+    for (let key of entry.keys) {
+        if (key.toLowerCase().startsWith(search))
+            return key;
     }
 
     return null;
-    // let i = value.toLowerCase().indexOf(search);
-    // if (i == -1) return null;
-    // return [i, value.length];
-}
-
-export function entry_display(entry) {
-    if ('names' in entry) {
-        return entry.names[0];
-    } else {
-        return entry.name;
-    }
 }

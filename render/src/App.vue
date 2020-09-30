@@ -32,7 +32,7 @@
 import { watchEffect } from 'vue';
 
 import Result from './Result.vue';
-import { hide, state, entry_match, entry_display } from './app';
+import { hide, state, entry_match } from './app';
 
 const MENU_SIZE = 7;
 
@@ -60,9 +60,10 @@ export default {
         .filter(pair => pair[0] != null);
 
       matches.sort((a, b) => {
-        for (let i = 0; i < a[0].length; ++i)
-          if (a[0][i] != b[0][i])
-            return a[0][i] - b[0][i];
+        let i1 = a[0].indexOf(search);
+        let i2 = b[0].indexOf(search);
+        if (i1 != i2) return i1 - i2;
+        if (a[0].length != b[0].length) return a[0].length - b[0].length;
         return 0;
       });
 
@@ -114,7 +115,7 @@ export default {
 
     inputDisplay() {
       if (this.selected)
-        return entry_display(this.selected).slice(0, this.input.length);
+        return this.selected.display_name.slice(0, this.input.length);
       return this.input;
     },
   },
@@ -134,14 +135,7 @@ export default {
     },
 
     submit() {
-      let args;
-      if ('names' in this.selected)
-        args = [this.selected.path];
-      else
-        args = [this.selected.target];
-
-      config_launch(...args);
-
+      this.selected.launch();
       hide(false);
     },
 

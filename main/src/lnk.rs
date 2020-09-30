@@ -75,15 +75,19 @@ pub fn expand_environment_data(value: &str) -> String {
     String::from_utf16(&value[0..len as usize]).unwrap()
 }
 
-pub fn resolve(lnk: &ShellLink) -> String {
+pub fn resolve(lnk: &ShellLink) -> Option<String> {
     if let Some(env_data) = &lnk.environment_variable_data {
-        expand_environment_data(env_data)
+        Some(expand_environment_data(env_data))
     } else if let Some(target) = &lnk.link_target_id_list {
         let pidlist = target.as_ptr() as _;
         let mut value = [0; 1024];
-        unsafe { SHGetPathFromIDListW(pidlist, value.as_mut_ptr()) };
-        let len = value.iter().position(|x| *x == 0).unwrap();
-        String::from_utf16(&value[0..len]).unwrap()
+        let result = unsafe { SHGetPathFromIDListW(pidlist, value.as_mut_ptr()) };
+        if result == 1 {
+            let len = value.iter().position(|x| *x == 0).unwrap();
+            Some(String::from_utf16(&value[0..len]).unwrap())
+        } else {
+            None
+        }
     } else {
         todo!("shell link without EnvironmentVariableDataBlock or LinkTargetIDList");
     }
@@ -98,7 +102,7 @@ pub fn extract_ico(lnk: &ShellLink) -> Option<Vec<u8>> {
         expand_environment_data(env_data)
     } else {
         // println!("icon C");
-        resolve(lnk)
+        resolve(lnk)?
     };
 
     if icon_path.ends_with(".ico") {
@@ -242,7 +246,11 @@ impl ShellLink {
         let cursor = &mut cursor;
         let header: &ShellLinkHeader = cursor.load();
 
-        let link_flags = LinkFlags::from_bits(header.link_flags.get()).unwrap();
+        let link_flags = match LinkFlags::from_bits(header.link_flags.get()) {
+            Some(flags) => flags,
+            None => panic!("invalid flags: {:x}", header.link_flags.get()),
+        };
+
         let file_attributes = header.file_attributes.get();
         let creation_time = header.creation_time.get();
         let access_time = header.access_time.get();
@@ -431,10 +439,4 @@ pub struct LinkInfo {
     pub common_path_suffix: String,
     pub local_base_path_unicode: Option<String>,
     pub common_path_suffix_unicode: Option<String>,
-}
-
-pub enum ExtraData {
-    EnvironmentVariableData(String),
-    IconEnvironmentData(String),
-    Unknown(u32, Vec<u8>),
 }

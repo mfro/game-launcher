@@ -13,8 +13,6 @@
 </template>
 
 <script>
-import { entry_display } from './app';
-
 export default {
   name: 'result',
 
@@ -26,7 +24,7 @@ export default {
 
   computed: {
     name() {
-      return entry_display(this.result);
+      return this.result.display_name;
     },
 
     iconStyle() {
@@ -35,19 +33,10 @@ export default {
       };
 
       if (this.result) {
-        let path;
-        if (this.result.icon)
-          path = `app://icons/${this.result.icon}`;
-        else if ('names' in this.result)
-          path = `app://link/${this.result.path}`;
-        else
-          path = `app://icons/${this.result.name}.png`;
-        path = encodeURI(path)
-
         style = {
           ...style,
           'opacity': 1,
-          'background-image': `url(${path})`,
+          'background-image': `url(${encodeURI(this.result.icon)})`,
         };
       }
 

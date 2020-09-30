@@ -64,8 +64,8 @@ where
 
     if globals.hook_list.len() == 0 {
         unsafe {
-            let hmod = GetModuleHandleA(ptr::null());
-            globals.hook_id = SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_callback), hmod, 0);
+            let module = GetModuleHandleA(ptr::null());
+            globals.hook_id = SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_callback), module, 0);
         }
     }
 
