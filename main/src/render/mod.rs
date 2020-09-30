@@ -40,17 +40,9 @@ impl RenderProcessHandler for MyRenderProcessHandler {
         let fn_attach_name = "config_attach";
         let fn_attach = v8::v8_function2(fn_attach_name.clone(), attach);
 
-        // let fn_attach = CefV8Value::create_function(&fn_attach_name, AttachFunction).unwrap();
-
+        let toggle = move |state: i32| toggle(&main_frame, state);
         let fn_toggle_name = "config_toggle";
-        let fn_toggle = v8::v8_function1(fn_toggle_name.clone(), move |state: i32| {
-            let msg = CefProcessMessage::create(&"toggle_window".into()).unwrap();
-            let args = msg.get_argument_list().unwrap();
-
-            args.set_int(0, state);
-
-            main_frame.send_process_message(CefProcessId::BROWSER, msg);
-        });
+        let fn_toggle = v8::v8_function1(fn_toggle_name.clone(), toggle);
 
         globals.set_value_bykey(
             Some(&fn_attach_name.into()),
@@ -121,6 +113,15 @@ fn attach(config_cb: v8::V8Function, hook_cb: v8::V8Function) {
     let array = v8::v8_array(v8.into_iter());
 
     config_cb.apply(None, &[array]);
+}
+
+fn toggle(main_frame: &CefFrame, state: i32) {
+    let msg = CefProcessMessage::create(&"toggle_window".into()).unwrap();
+    let args = msg.get_argument_list().unwrap();
+
+    args.set_int(0, state);
+
+    main_frame.send_process_message(CefProcessId::BROWSER, msg);
 }
 
 struct V8Lunchable {
@@ -303,15 +304,14 @@ fn find_lnks() -> Vec<(PathBuf, PathBuf)> {
 }
 
 fn build_index() {
-    let mut content = vec![];
-    match File::open("config.yaml") {
+    let yaml = match File::open("config.yaml") {
         Ok(mut f) => {
+            let mut content = vec![];
             f.read_to_end(&mut content).unwrap();
+            serde_yaml::from_slice(&content).unwrap()
         }
-        Err(_) => {}
-    }
-
-    let yaml: Vec<crate::index::Custom> = serde_yaml::from_slice(&content).unwrap();
+        Err(_) => vec![],
+    };
 
     let from_yaml = yaml.into_iter().map(|x| crate::index::Lunchable::Custom(x));
     let from_lnks = find_lnks()

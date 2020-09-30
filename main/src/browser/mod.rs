@@ -25,7 +25,7 @@ use winapi::{
 };
 
 lazy_static::lazy_static! {
-    static ref PREVIOUS_HWND: Mutex<Cell<Option<usize>>> = Default::default();
+    static ref PREVIOUS_FOCUS: Mutex<Cell<Option<usize>>> = Default::default();
 }
 
 struct MySchemeHandlerFactory;
@@ -190,7 +190,7 @@ impl Client for MyClient {
         let args = message.get_argument_list().unwrap();
 
         if name == "toggle_window" {
-            let visible = args.get_int(0) as usize;
+            let visible = args.get_int(0);
 
             let host = browser.get_host().unwrap();
             let hwnd = host.get_window_handle() as HWND;
@@ -209,11 +209,11 @@ impl LifeSpanHandler for MyLifeSpanHandler {
     }
 }
 
-fn toggle(hwnd: HWND, action: usize) {
+fn toggle(hwnd: HWND, state: i32) {
     let base_style = WS_POPUP;
     let base_ex_style = WS_EX_TOOLWINDOW;
 
-    if action == 1 {
+    if state == 1 {
         unsafe {
             SetWindowLongPtrA(hwnd, GWL_STYLE, (base_style | WS_VISIBLE) as _);
             SetWindowLongPtrA(hwnd, GWL_EXSTYLE, base_ex_style as _);
@@ -222,7 +222,7 @@ fn toggle(hwnd: HWND, action: usize) {
             let prev = GetForegroundWindow() as usize;
 
             if prev != hwnd {
-                PREVIOUS_HWND.lock().unwrap().set(Some(prev));
+                PREVIOUS_FOCUS.lock().unwrap().set(Some(prev));
 
                 std::thread::spawn(move || {
                     keybd_event(0x12, 0, 1, 0);
@@ -239,8 +239,8 @@ fn toggle(hwnd: HWND, action: usize) {
             SetWindowLongPtrA(hwnd, GWL_STYLE, base_style as _);
             SetWindowLongPtrA(hwnd, GWL_EXSTYLE, (base_ex_style | WS_EX_TRANSPARENT) as _);
 
-            if action == 2 {
-                if let Some(prev) = PREVIOUS_HWND.lock().unwrap().take() {
+            if state == 2 {
+                if let Some(prev) = PREVIOUS_FOCUS.lock().unwrap().take() {
                     keybd_event(0x12, 0, 1, 0);
 
                     SetForegroundWindow(prev as _);
