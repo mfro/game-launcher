@@ -14,10 +14,10 @@ use winapi::{
     },
 };
 
-use crate::flat_data::{num::*, FlatDataImpl, LoadExt, StoreExt};
+use flat::prelude::*;
 
 flat_data!(IconHeader);
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Copy, Clone)]
 pub struct IconHeader {
     pub _reserved: u16le,
@@ -26,7 +26,7 @@ pub struct IconHeader {
 }
 
 flat_data!(IconImageHeader);
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Copy, Clone)]
 pub struct IconImageHeader {
     pub width: u8,
@@ -380,7 +380,7 @@ impl ShellLink {
 }
 
 flat_data!(ShellLinkHeader);
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Copy, Clone)]
 pub struct ShellLinkHeader {
     pub header_size: u32le,

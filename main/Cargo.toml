@@ -6,13 +6,28 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[profile.release]
+debug = true
+
 [dependencies]
-base64 = "0.12.3"
+base64 = "0.13.0"
 bitflags = "1.2.1"
 cef = { path = "../../cerium-trifluoride/cef" }
-lazy_static  = "1.4.0"
+flat = { path = "../flat" }
+lazy_static = "1.4.0"
+mime_guess = "2.0.3"
 percent-encoding = "2.1.0"
 serde = "1.0"
 serde_yaml = "0.8"
 serde_derive = "1.0"
-winapi = { version = "0.3.9", features = ["winuser", "uxtheme", "dwmapi", "libloaderapi", "shlobj", "processenv", "shellapi", "dbghelp"] }
+winapi = { version = "0.3.9", features = [
+    "winuser",
+    "uxtheme",
+    "dwmapi",
+    "libloaderapi",
+    "shlobj",
+    "processenv",
+    "shellapi",
+    "ioapiset",
+    "winioctl",
+] }

@@ -24,6 +24,8 @@ use winapi::{
     },
 };
 
+mod hook;
+
 lazy_static::lazy_static! {
     static ref PREVIOUS_FOCUS: Mutex<Cell<Option<usize>>> = Default::default();
 }
@@ -336,7 +338,7 @@ pub fn main(main_args: CefMainArgs, app: CefApp) {
     unsafe { DwmExtendFrameIntoClientArea(hwnd, &margins) };
 
     let mut held = std::collections::HashSet::<DWORD>::new();
-    let _hook = crate::hook::set_hook(move |ty, info| {
+    let _hook = hook::set_hook(move |ty, info| {
         if ty == WM_KEYUP {
             held.remove(&info.vkCode);
         } else if ty == WM_KEYDOWN {

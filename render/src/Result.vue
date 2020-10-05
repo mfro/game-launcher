@@ -1,10 +1,10 @@
 <template>
   <div class="result">
     <div class="name">
-      <span v-text="selected ? name.slice(0, input.length) : ''" />
+      <span v-text="selected ? name.slice(0, search.length) : ''" />
       <span
         :class="{ selected }"
-        v-text="selected ? name.slice(input.length) : name"
+        v-text="selected ? name.slice(search.length) : name"
       />
     </div>
 
@@ -18,13 +18,13 @@ export default {
 
   props: {
     result: Object,
-    input: String,
+    search: String,
     selected: Boolean,
   },
 
   computed: {
     name() {
-      return this.result.display_name;
+      return this.result.target.display_name;
     },
 
     iconStyle() {
@@ -36,7 +36,7 @@ export default {
         style = {
           ...style,
           'opacity': 1,
-          'background-image': `url(${encodeURI(this.result.icon)})`,
+          'background-image': `url(${encodeURI(this.result.target.display_icon)})`,
         };
       }
 

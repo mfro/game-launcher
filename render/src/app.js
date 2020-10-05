@@ -1,22 +1,26 @@
-import yaml from 'js-yaml';
-import { markRaw, reactive } from 'vue';
+import { markRaw, reactive, watchEffect } from 'vue';
 
 export const state = reactive({
-    entries: [],
+    search: '',
+    matches: [],
     visible: false,
     instance: null,
 });
 
-function on_hook() {
-    config_toggle(1);
+search.hook(() => {
+    console.log('on hook');
+    search.toggle(1);
     state.visible = true;
-}
+});
 
-function on_config(raw, links) {
-    state.entries = raw.map(entry => markRaw(entry));
-}
-
-config_attach(on_config, on_hook);
+watchEffect(() => {
+    console.log(state.search);
+    let a = performance.now();
+    let matches = search.search(state.search);
+    let b = performance.now();
+    state.matches = markRaw(matches);
+    console.log(b - a);
+});
 
 window.addEventListener('blur', e => hide(true));
 
@@ -42,7 +46,7 @@ export function hide(restore, callback) {
     if (state.visible) {
         state.visible = false;
         setTimeout(() => {
-            config_toggle(restore ? 2 : 0);
+            search.toggle(restore ? 2 : 0);
             state.instance.reset();
             callback && callback()
         }, 200);

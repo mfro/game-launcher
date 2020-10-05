@@ -17,11 +17,11 @@
 
       <div class="results" :style="menuStyle">
         <result
-          v-for="(result, i) in visibleMatches"
-          :key="i"
+          v-for="result in state.matches"
+          :key="result.key"
           :result="result"
           :selected="result == selected"
-          :input="input"
+          :search="state.search"
         />
       </div>
     </div>
@@ -45,43 +45,21 @@ export default {
 
   data() {
     return {
+      state,
       index: 0,
-      input: '',
       animate: false,
     };
   },
 
   computed: {
-    matches() {
-      let search = this.input.toLowerCase();
-
-      let matches = state.entries
-        .map(e => [entry_match(search, e), e])
-        .filter(pair => pair[0] != null);
-
-      matches.sort((a, b) => {
-        let i1 = a[0].indexOf(search);
-        let i2 = b[0].indexOf(search);
-        if (i1 != i2) return i1 - i2;
-        if (a[0].length != b[0].length) return a[0].length - b[0].length;
-        return 0;
-      });
-
-      return matches.map((pair) => pair[1]);
-    },
-
-    visibleMatches() {
-      return this.matches.slice(0, MENU_SIZE);
-    },
-
     selected() {
-      if (this.matches.length == 0)
+      if (state.matches.length == 0)
         return null;
-      return this.visibleMatches[this.selectedIndex];
+      return state.matches[this.selectedIndex];
     },
 
     selectedIndex() {
-      let limit = Math.min(this.matches.length, MENU_SIZE);
+      let limit = Math.min(state.matches.length, MENU_SIZE);
       if (limit == 0)
         return 0;
       let index = this.index % limit;
@@ -115,8 +93,8 @@ export default {
 
     inputDisplay() {
       if (this.selected)
-        return this.selected.display_name.slice(0, this.input.length);
-      return this.input;
+        return this.selected.target.display_name.slice(0, state.search.length);
+      return state.search;
     },
   },
 
@@ -124,18 +102,18 @@ export default {
     state.instance = this;
 
     watchEffect(() => {
-      this.index = Math.max(0, Math.min(this.visibleMatches.length - 1, this.index));
+      this.index = Math.max(0, Math.min(state.matches.length - 1, this.index));
     });
   },
 
   methods: {
     reset() {
-      this.input = '';
+      state.search = '';
       this.index = 0;
     },
 
     submit() {
-      this.selected.launch();
+      this.selected.target.launch();
       hide(false);
     },
 
@@ -162,7 +140,7 @@ export default {
       }
 
       // console.log(start, end1, end2, this.$refs.input.selectionStart);
-      this.input = this.input.slice(0, start) + str.slice(start, end1) + this.input.slice(end2);
+      state.search = state.search.slice(0, start) + str.slice(start, end1) + state.search.slice(end2);
       this.animate = false;
 
       let caret = this.$refs.input.selectionStart;
@@ -173,8 +151,8 @@ export default {
     },
 
     select(delta) {
-      let index = (this.index + delta) % this.visibleMatches.length;
-      if (index < 0) index += this.visibleMatches.length;
+      let index = (this.index + delta) % state.matches.length;
+      if (index < 0) index += state.matches.length;
       this.index = index;
       this.animate = true;
     },
