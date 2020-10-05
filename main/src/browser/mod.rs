@@ -19,7 +19,7 @@ use winapi::{
         winuser::{
             keybd_event, GetForegroundWindow, SetFocus, SetForegroundWindow, SetWindowLongPtrA,
             GWL_EXSTYLE, GWL_STYLE, VK_LWIN, VK_RETURN, WM_KEYDOWN, WM_KEYUP, WS_EX_TOOLWINDOW,
-            WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
+            WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
         },
     },
 };
@@ -256,11 +256,12 @@ fn toggle(hwnd: HWND, state: i32) {
 }
 
 pub fn main(main_args: CefMainArgs, app: CefApp) {
-    let debug_render = std::env::var("DEBUG_RENDER").is_ok();
+    let debug_ui = std::env::var("DEBUG_UI").is_ok();
 
     let settings = CefSettings::default()
-        .set_log_severity(CefLogSeverity::FATAL)
+        .set_log_severity(CefLogSeverity::ERROR)
         .set_remote_debugging_port(8081)
+        .set_no_sandbox(1)
         .build();
 
     cef_initialize(&main_args, &settings, Some(app.clone()), None);
@@ -279,11 +280,11 @@ pub fn main(main_args: CefMainArgs, app: CefApp) {
         .set_background_color(CefColor::new(0x00, 0x00, 0, 0))
         .build();
 
-    let size = (480 + 200, 1000);
+    let size = (1000, 1000);
 
     let main_window_info = CefWindowInfo::default()
         .set_style(WS_POPUP)
-        .set_ex_style(WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_TOPMOST)
+        .set_ex_style(WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT)
         .set_x((1920 - size.0) / 2)
         .set_y(0)
         .set_width(size.0)
@@ -291,7 +292,7 @@ pub fn main(main_args: CefMainArgs, app: CefApp) {
         .set_window_name("games")
         .build();
 
-    let url = match debug_render {
+    let url = match debug_ui {
         true => "http://localhost:8080/index.html",
         false => "app://app/index.html",
     };
@@ -305,8 +306,6 @@ pub fn main(main_args: CefMainArgs, app: CefApp) {
         None,
     )
     .unwrap();
-
-    let host = browser.get_host().unwrap();
 
     // if std::env::var("DEBUG_RENDER").is_ok() {
     //     let devtools_window_info = CefWindowInfo::default()
@@ -326,6 +325,7 @@ pub fn main(main_args: CefMainArgs, app: CefApp) {
     //     );
     // }
 
+    let host = browser.get_host().unwrap();
     let hwnd = host.get_window_handle() as HWND;
 
     let margins = MARGINS {

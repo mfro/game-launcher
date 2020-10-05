@@ -5,11 +5,14 @@ use winapi::{
     shared::minwindef::HMODULE,
     shared::minwindef::MAX_PATH,
     um::{
-        libloaderapi::EnumResourceNamesW, libloaderapi::FindResourceW, libloaderapi::FreeLibrary,
-        libloaderapi::LoadLibraryExW, libloaderapi::LoadResource, libloaderapi::LockResource,
-        libloaderapi::SizeofResource, libloaderapi::LOAD_LIBRARY_AS_DATAFILE,
-        libloaderapi::LOAD_LIBRARY_AS_IMAGE_RESOURCE, processenv::ExpandEnvironmentStringsW,
-        shellapi::SHGetFileInfoW, shellapi::SHFILEINFOW, shellapi::SHGFI_DISPLAYNAME,
+        libloaderapi::{
+            EnumResourceNamesW, FindResourceW, FreeLibrary, LoadLibraryExW, LoadResource,
+            LockResource, SizeofResource, LOAD_LIBRARY_AS_DATAFILE, LOAD_LIBRARY_AS_IMAGE_RESOURCE,
+        },
+        processenv::ExpandEnvironmentStringsW,
+        shellapi::SHGetFileInfoW,
+        shellapi::SHFILEINFOW,
+        shellapi::SHGFI_DISPLAYNAME,
         shlobj::SHGetPathFromIDListW,
     },
 };

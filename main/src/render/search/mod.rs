@@ -1,21 +1,22 @@
 use std::cmp::Ordering;
 
-use cef::{v8, CefV8Propertyattribute, CefV8Value};
+use cef::{v8, CefV8Context, CefV8Propertyattribute, CefV8Value};
 use mime_guess::Mime;
+
+mod assets;
 
 mod config;
 mod start_menu;
 
-
 /// Contains information required to find a value in the index.
-/// That means a list of lower-case strings
+/// That means a list of strings
 pub struct IndexEntry {
     keys: Vec<String>,
 }
 
 impl IndexEntry {
     pub fn new<A: AsRef<str>, I: Iterator<Item = A>>(keys: I) -> IndexEntry {
-        let keys = keys.map(|s| s.as_ref().to_lowercase()).collect();
+        let keys = keys.map(|x| x.as_ref().to_owned()).collect();
         IndexEntry { keys }
     }
 
@@ -34,32 +35,8 @@ impl IndexEntry {
 /// That means a display name & icon for rendering, and a function to launch the target
 pub struct LaunchTarget {
     display_name: String,
-    display_icon: Option<String>,
+    display_icon: Option<(Mime, Vec<u8>)>,
     launch: Box<dyn Fn()>,
-}
-
-impl From<LaunchTarget> for CefV8Value {
-    fn from(info: LaunchTarget) -> Self {
-        let object = CefV8Value::create_object(None, None).unwrap();
-
-        let key = "display_name";
-        let value = &info.display_name;
-        object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
-
-        let key = "display_icon";
-        let value = match &info.display_icon {
-            Some(url) => url.as_ref(),
-            None => "app://404",
-        };
-        object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
-
-        let key = "launch";
-        let launch = info.launch;
-        let value = v8::v8_function0(key, move || launch());
-        object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
-
-        object
-    }
 }
 
 pub struct Search {
@@ -72,16 +49,52 @@ struct Match<'a> {
     object: &'a CefV8Value,
 }
 
+struct ReleaseCallback;
+impl cef::V8ArrayBufferReleaseCallback for ReleaseCallback {
+    fn release_buffer(&mut self, buffer: &mut std::ffi::c_void) {
+        println!("{:?}", buffer as *mut _);
+    }
+}
+
 impl Search {
-    pub fn new() -> Search {
-        let index = build_index()
-            .map(|(index, target)| (index, target.into()))
-            .collect();
+    pub fn new(ctx: &CefV8Context) -> Search {
+        unsafe { winapi::um::objbase::CoInitialize(std::ptr::null_mut()) };
+
+        let start = std::time::Instant::now();
+
+        let mut index = vec![];
+
+        for (entry, info) in build_index() {
+            let object = CefV8Value::create_object(None, None).unwrap();
+
+            let key = "display_name";
+            let value = info.display_name;
+            object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
+
+            let key = "display_icon";
+            let value: CefV8Value = match info.display_icon {
+                Some((mime, mut data)) => assets::create_asset(ctx, &mime, &mut data),
+                None => "app://notfound".into(),
+            };
+            object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
+
+            let key = "launch";
+            let launch = info.launch;
+            let value = v8::v8_function0(key, move || launch());
+            object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
+
+            index.push((entry, object));
+        }
+
+        let end = std::time::Instant::now();
+        println!("index built: {:?}", end - start);
 
         Search { index }
     }
 
     pub fn search(&self, query: String) -> CefV8Value {
+        let query = query.to_lowercase();
+
         let mut matches: Vec<_> = self
             .index
             .iter()
@@ -105,19 +118,19 @@ impl Search {
         let limit = 7.min(matches.len());
         let display = &matches[0..limit];
 
-        let result = v8::v8_array(display.iter().map(|m| {
+        v8::v8_array(display.iter().map(|m| {
             let object = CefV8Value::create_object(None, None).unwrap();
 
             let key = "key";
             let value = m.key;
             object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
 
-            let key = "index";
+            let key = "start";
             let value = m.index;
             object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
 
-            let key = "length";
-            let value = query.len();
+            let key = "end";
+            let value = m.index + query.len();
             object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
 
             let key = "target";
@@ -125,15 +138,15 @@ impl Search {
             object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
 
             object
-        }));
-
-        result
+        }))
     }
 }
 
-pub fn icon_helper<F: FnOnce() -> std::io::Result<(Mime, Vec<u8>)>>(f: F) -> Option<String> {
+pub fn icon_helper<F: FnOnce() -> std::io::Result<(Mime, Vec<u8>)>>(
+    f: F,
+) -> Option<(Mime, Vec<u8>)> {
     match f() {
-        Ok((mime, data)) => Some(format!("data:{};base64,{}", mime, base64::encode(data))),
+        Ok((mime, data)) => Some((mime, data)),
         Err(e) => {
             println!("{:?}", e);
             None

@@ -1,14 +1,12 @@
 <template>
   <div class="result">
     <div class="name">
-      <span v-text="selected ? name.slice(0, search.length) : ''" />
-      <span
-        :class="{ selected }"
-        v-text="selected ? name.slice(search.length) : name"
-      />
+      <span class="hint" v-text="prefix" />
+      <span v-text="display" />
+      <span class="hint" v-text="suffix" />
     </div>
 
-    <div class="icon" :style="iconStyle" />
+    <div class="icon" v-if="icon" :style="iconStyle" />
   </div>
 </template>
 
@@ -17,57 +15,64 @@ export default {
   name: 'result',
 
   props: {
-    result: Object,
-    search: String,
-    selected: Boolean,
+    match: Object,
+    target: Object,
+    name: { type: Boolean, default: false },
+    icon: { type: Boolean, default: false },
+    hint: { type: Boolean, default: false },
   },
 
   computed: {
-    name() {
-      return this.result.target.display_name;
+    prefix() {
+      if (this.hint) return this.match.key.slice(0, this.match.start);
+      else return '';
+    },
+
+    display() {
+      if (this.hint) return this.match.key.slice(this.match.start, this.match.end);
+      else if (this.name) return this.match.key;
+      else return '';
+    },
+
+    suffix() {
+      if (this.hint) return this.match.key.slice(this.match.end);
+      else return '';
     },
 
     iconStyle() {
-      let style = {
-        'opacity': 0,
+      return {
+        'background-image': `url(${encodeURI(this.target.display_icon)})`,
       };
-
-      if (this.result) {
-        style = {
-          ...style,
-          'opacity': 1,
-          'background-image': `url(${encodeURI(this.result.target.display_icon)})`,
-        };
-      }
-
-      return style;
     },
   },
 };
 </script>
 
 <style lang="scss" scoped>
+@import "common.scss";
+
 .result {
   display: flex;
 
-  .name {
+  > .name {
     flex: 1 1 0;
     padding: 12px 16px;
     white-space: pre;
 
-    span {
-      font-size: 24px;
-      font-family: Google Sans;
-      font-weight: 500;
-      transition: color 250ms;
+    > span {
+      @include text;
+
+      &.hint {
+        color: #888;
+      }
     }
 
-    .selected {
-      color: #888;
-    }
+    // .animate {
+    //   transition: color 250ms;
+    // }
   }
 
-  .icon {
+  > .icon {
     flex: 0 0 auto;
     width: 48px;
     height: 48px;

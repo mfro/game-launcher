@@ -1,5 +1,7 @@
 <template>
   <div class="root">
+    <canvas ref="canvas" width="840" height="840" />
+
     <div class="window" :style="windowStyle">
       <div class="background" :style="menuStyle" />
 
@@ -9,19 +11,43 @@
           type="text"
           spellcheck="false"
           :value="inputDisplay"
+          :class="{ sliding, overlay: selected != null }"
+          :style="inputStyle"
           @input="onInput"
           v-on:keydown.enter="submit()"
-          :class="{ overlay: selected != null }"
         />
+
+        <div class="inlay-container">
+          <div class="inlay" :style="menuStyle">
+            <result
+              v-for="(match, i) in state.matches"
+              :key="i"
+              :match="match"
+              :target="match.target"
+              name
+              hint
+            />
+          </div>
+        </div>
+
+        <div class="overlay-container">
+          <div class="overlay" :style="menuStyle">
+            <result
+              v-for="(match, i) in state.matches"
+              :key="i"
+              :target="match.target"
+              icon
+            />
+          </div>
+        </div>
       </div>
 
       <div class="results" :style="menuStyle">
         <result
-          v-for="result in state.matches"
-          :key="result.key"
-          :result="result"
-          :selected="result == selected"
-          :search="state.search"
+          v-for="(match, i) in state.matches"
+          :key="i"
+          :match="match"
+          name
         />
       </div>
     </div>
@@ -47,7 +73,7 @@ export default {
     return {
       state,
       index: 0,
-      animate: false,
+      sliding: false,
     };
   },
 
@@ -86,14 +112,39 @@ export default {
 
     menuStyle() {
       return {
-        top: `${this.selectedIndex * -54}px`,
-        transition: this.animate ? 'all 200ms ease-in-out' : '',
+        'transform': `translateY(${this.selectedIndex * -54}px)`,
+        'transition': this.sliding ? 'all 200ms ease-out' : '',
       };
+    },
+
+    prefix() {
+      if (!this.selected)
+        return '';
+
+      return this.selected.key.slice(0, this.selected.start);
+    },
+
+    inputStyle() {
+      if (this.selected && this.$refs.canvas) {
+        let context = this.$refs.canvas.getContext('2d');
+        context.font = '500 24px Google Sans'
+
+        let fullText = context.measureText(this.selected.key.slice(0, this.selected.end)).width;
+        let inputText = context.measureText(this.inputDisplay).width;
+        // compute the difference rather than the length of the prefix directly for kerning
+
+        return {
+          'text-indent': `${fullText - inputText}px`
+        };
+      }
+
+      return {};
     },
 
     inputDisplay() {
       if (this.selected)
-        return this.selected.target.display_name.slice(0, state.search.length);
+        return this.selected.key.slice(this.selected.start, this.selected.end);
+
       return state.search;
     },
   },
@@ -118,30 +169,34 @@ export default {
     },
 
     onInput(e) {
-      let str = e.target.value;
-      let start = Math.min(str.length, this.inputDisplay.length);
+      let edited = e.target.value;
+      let source = this.inputDisplay;
+
+      let start = Math.min(edited.length, source.length);
       for (let i = 0; i < start; ++i) {
-        if (str[i] != this.inputDisplay[i]) {
+        if (edited[i] != source[i]) {
           start = i;
           break;
         }
       }
 
-      let end1 = str.length;
-      let end2 = this.inputDisplay.length;
-      for (let i1 = start; i1 < str.length; ++i1) {
-        for (let i2 = start; i2 < this.inputDisplay.length; ++i2) {
-          if (str.slice(i1) == this.inputDisplay.slice(i2)) {
+      let end1 = edited.length;
+      let end2 = source.length;
+      outer:
+      for (let i1 = start; i1 < edited.length; ++i1) {
+        for (let i2 = start; i2 < source.length; ++i2) {
+          if (edited.slice(i1) == source.slice(i2)) {
             end1 = i1;
             end2 = i2;
-            break;
+            break outer;
           }
         }
       }
 
-      // console.log(start, end1, end2, this.$refs.input.selectionStart);
-      state.search = state.search.slice(0, start) + str.slice(start, end1) + state.search.slice(end2);
-      this.animate = false;
+      // console.log(edited, source, ':', state.search);
+      // console.log(start, end1, end2);
+      state.search = state.search.slice(0, start) + edited.slice(start, end1) + state.search.slice(end2);
+      this.sliding = false;
 
       let caret = this.$refs.input.selectionStart;
       setTimeout(() => {
@@ -154,13 +209,26 @@ export default {
       let index = (this.index + delta) % state.matches.length;
       if (index < 0) index += state.matches.length;
       this.index = index;
-      this.animate = true;
+
+      this.sliding = true;
+      this.$refs.input.blur();
+      clearTimeout(this.timeout);
+      this.timeout = setTimeout(() => {
+        this.sliding = false;
+        this.$refs.input.focus();
+      }, 200);
     },
   },
 };
 </script>
 
 <style lang="scss" scoped>
+@import "common.scss";
+
+canvas {
+  display: none;
+}
+
 .root {
   width: 100vw;
   height: 100vh;
@@ -169,61 +237,94 @@ export default {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-}
 
-.window {
-  position: relative;
-  width: 640px;
-  transition: all 200ms ease-in-out;
-}
+  > canvas {
+    @include text;
+  }
 
-.background {
-  width: 100%;
-  height: 100%;
-  position: absolute;
-  border-radius: 5px;
-  background-color: #bdbdbd;
-  box-shadow: 0 0 10px -5px currentColor;
-}
-
-.results {
-  display: flex;
-  flex-direction: column;
-  position: relative;
-}
-
-.search-bar {
-  width: 100%;
-
-  top: 0;
-  left: 0;
-
-  position: absolute;
-  border-radius: 5px;
-  background-color: white;
-  box-shadow: 0 0 10px -5px currentColor;
-
-  display: flex;
-
-  input {
-    flex: 1 1 0;
+  > .window {
     position: relative;
-    z-index: 1;
+    width: 840px;
+    transition: all 200ms ease-in-out;
 
-    padding: 12px 16px;
-    box-sizing: border-box;
-    -webkit-appearance: none;
-    border: none;
-    outline: none;
-    background: none;
+    > .background {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      border-radius: 5px;
+      background-color: #bdbdbd;
+      box-shadow: 0 0 10px -5px currentColor;
+    }
 
-    font-size: 24px;
-    font-family: Google Sans;
-    font-weight: 500;
+    > .search-bar {
+      width: 100%;
+      z-index: 1;
 
-    &.overlay {
-      color: transparent;
-      caret-color: #333;
+      top: 0;
+      left: 0;
+      padding: 12px 16px;
+      box-sizing: border-box;
+
+      position: absolute;
+      border-radius: 5px;
+      background-color: white;
+      box-shadow: 0 0 10px -5px currentColor;
+
+      display: flex;
+
+      > input {
+        @include text;
+
+        flex: 1 1 0;
+        position: relative;
+        z-index: 1;
+
+        &.overlay {
+          color: transparent;
+          caret-color: #333;
+        }
+
+        &.sliding {
+          caret-color: transparent;
+        }
+      }
+
+      > .inlay-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+
+        > .inlay {
+          position: relative;
+          top: 0;
+          left: 0;
+          width: 100%;
+        }
+      }
+
+      > .overlay-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+
+        > .overlay {
+          position: relative;
+          top: 0;
+          left: 0;
+          width: 100%;
+        }
+      }
+    }
+
+    > .results {
+      display: flex;
+      flex-direction: column;
+      position: relative;
     }
   }
 }

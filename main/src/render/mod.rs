@@ -38,7 +38,7 @@ impl RenderProcessHandler for MyRenderProcessHandler {
         root_object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
 
         let key = "search";
-        let search = search::Search::new();
+        let search = search::Search::new(&context);
         let search = move |query| search.search(query);
         let value = v8::v8_function1(key.clone(), search);
         root_object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);

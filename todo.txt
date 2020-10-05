@@ -1,0 +1,4 @@
+Indexing ideas:
+    - NTFS MFT scan
+    - Steam library
+    - Windows 10 Apps >:(

@@ -101,31 +101,29 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
             }
         })
         // open and parse the .lnk files
-        .map(|path| {
+        .filter_map(|path| {
             let mut raw = vec![];
             File::open(&path).unwrap().read_to_end(&mut raw).unwrap();
             let lnk = ShellLink::load(&raw);
-            (path, lnk)
+            let target = lnk::resolve(&lnk)?;
+            Some((path, target))
         })
         // select only .lnk files that point to 'exe', 'msc', 'url' files
-        .filter(|(path, lnk)| match lnk::resolve(&lnk) {
-            None => true,
-            Some(target) => match target.rfind('.') {
-                None => panic!(),
-                Some(i) => match &target[i + 1..] {
-                    "exe" | "msc" | "url" => true,
-                    "chm" | "txt" | "rtf" | "pdf" | "html" => false,
-                    other => {
-                        println!("Unknown lnk target extension: {} {:?}", other, path);
-                        false
-                    }
-                },
+        .filter(|(path, target)| match target.rfind('.') {
+            None => panic!(),
+            Some(i) => match &target[i + 1..] {
+                "exe" | "msc" => true,
+                "url" | "chm" | "txt" | "rtf" | "pdf" | "html" | "ini" => false,
+                other => {
+                    println!("Unknown lnk target extension: {} {:?}", other, path);
+                    false
+                }
             },
         })
         // get display names and add to the tuple
-        .map(|(path, lnk)| {
+        .map(|(path, target)| {
             let name = lnk::get_display_name(&path);
-            (path, lnk, name)
+            (path, target, name)
         })
         .collect();
 
@@ -133,16 +131,15 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
     let vec: Vec<_> = vec
         .iter()
         // deduplicate .lnk files that point to the same target and have the same name
-        .filter(|(path, lnk, name)| {
-            let target = lnk::resolve(lnk);
+        .filter(|(path1, target1, name1)| {
             let (path2, _, name2) = vec
                 .iter()
-                .rfind(|(_, lnk, _)| lnk::resolve(lnk) == target)
+                .rfind(|(_, target2, _)| target2 == target1)
                 .unwrap();
 
             // if path == path2, then its the same lnk
             // if don't have the same name, then they are distinct
-            path == path2 || name != name2
+            path1 == path2 || name1 != name2
         })
         // construct index entries
         .map(|(path, _, name)| {
@@ -150,8 +147,8 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
                 path.file_stem()
                     .and_then(|os| os.to_str())
                     .unwrap()
-                    .to_lowercase(),
-                name.to_lowercase(),
+                    .to_owned(),
+                name.clone(),
             ];
 
             let display_name = name.clone();

@@ -32,6 +32,8 @@ impl App for MyApp {
         command_line: CefCommandLine,
     ) -> () {
         command_line.append_switch(&"disable-extensions".into());
+
+        // println!("{:?}", _process_type);
     }
 
     fn on_register_custom_schemes(&mut self, registrar: CefSchemeRegistrar) -> () {
@@ -41,7 +43,6 @@ impl App for MyApp {
             | CefSchemeOptions::FETCH_ENABLED;
 
         let scheme_name = "app".into();
-
         registrar.add_custom_scheme(&scheme_name, options.into());
     }
 
