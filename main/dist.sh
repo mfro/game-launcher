@@ -1,5 +1,9 @@
 rm -rf "dist"
 mkdir "dist"
+
+cp -r "config.yaml" "dist"
+cp -r "extern"/* "dist"
+
 cp -r "$CEF_ROOT"/Release/*.dll "dist"
 cp -r "$CEF_ROOT"/Release/*.bin "dist"
 cp -r "$CEF_ROOT"/Release/swiftshader "dist"

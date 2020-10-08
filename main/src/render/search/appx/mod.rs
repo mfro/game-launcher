@@ -236,6 +236,8 @@ fn load_pri<P: AsRef<OsStr>>(path: P) -> PriInfo {
     let xml = std::str::from_utf8(data).unwrap();
     let parsed = quick_xml::de::from_str(xml).unwrap();
 
+    unsafe { MrmFreeMemory(out_data) };
+
     parsed
 }
 

@@ -9,6 +9,8 @@ pub mod appx;
 mod config;
 mod start_menu;
 
+pub type MatchScore = [usize; 2];
+
 /// Contains information required to find a value in the index.
 /// That means a list of strings
 pub struct IndexEntry {
@@ -21,10 +23,14 @@ impl IndexEntry {
         IndexEntry { keys }
     }
 
-    pub fn do_match(&self, query: &str) -> Option<(&str, usize)> {
+    pub fn do_match(&self, query: &str) -> Option<(&str, usize, MatchScore)> {
         for key in &self.keys {
             if let Some(index) = key.to_lowercase().find(&query) {
-                return Some((key, index));
+                let chars: Vec<_> = key.chars().take(index).collect();
+                let word_index = chars.iter().filter(|&&c| c == ' ').count();
+                let char_index = chars.iter().rev().position(|&x| x == ' ').unwrap_or(index);
+
+                return Some((key, index, [char_index, word_index]));
             }
         }
 
@@ -46,6 +52,7 @@ pub struct Search {
 struct Match<'a> {
     key: &'a str,
     index: usize,
+    score: MatchScore,
     object: &'a CefV8Value,
 }
 
@@ -93,20 +100,27 @@ impl Search {
             .index
             .iter()
             .filter_map(|(entry, object)| {
-                entry
-                    .do_match(&query)
-                    .map(|(key, index)| Match { key, index, object })
+                entry.do_match(&query).map(|(key, index, score)| Match {
+                    key,
+                    index,
+                    score,
+                    object,
+                })
             })
             .collect();
 
         matches.sort_unstable_by(|a, b| {
-            if a.index != b.index {
-                return a.index.cmp(&b.index);
-            } else if a.key.len() != b.key.len() {
-                return a.key.len().cmp(&b.key.len());
-            } else {
-                return Ordering::Equal;
+            match Ord::cmp(&a.score, &b.score) {
+                Ordering::Equal => {}
+                o => return o,
+            };
+
+            match Ord::cmp(&a.key.len(), &b.key.len()) {
+                Ordering::Equal => {}
+                o => return o,
             }
+
+            Ord::cmp(a.key, b.key)
         });
 
         let limit = 7.min(matches.len());
@@ -147,7 +161,17 @@ pub fn icon_from_file<P: AsRef<Path>>(path: P) -> Option<(Mime, Vec<u8>)> {
 }
 
 fn build_index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
-    config::index()
-        .chain(start_menu::index())
-        .chain(appx::index())
+    let config = config::load();
+
+    let mut index: Vec<_> = config::index(&config).collect();
+
+    if config.index_appx {
+        index.extend(appx::index());
+    }
+
+    if config.index_appx {
+        index.extend(start_menu::index());
+    }
+
+    index.into_iter()
 }

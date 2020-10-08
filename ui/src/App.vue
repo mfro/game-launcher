@@ -303,6 +303,7 @@ canvas {
           top: 0;
           left: 0;
           width: 100%;
+          display: block;
         }
       }
 
@@ -318,6 +319,7 @@ canvas {
           top: 0;
           left: 0;
           width: 100%;
+          display: block;
         }
       }
     }

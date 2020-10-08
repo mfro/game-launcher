@@ -3,21 +3,42 @@ use std::{fs::File, io::prelude::*, process::Command};
 use super::{icon_from_file, IndexEntry, LaunchTarget};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ConfigEntry {
+pub struct SearchConfig {
+    pub index_appx: bool,
+    pub index_start_menu: bool,
+    pub index_manual: Vec<ConfigIndexEntry>,
+}
+
+impl Default for SearchConfig {
+    fn default() -> Self {
+        SearchConfig {
+            index_appx: true,
+            index_start_menu: true,
+            index_manual: vec![],
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ConfigIndexEntry {
     names: Vec<String>,
     target: Vec<String>,
     icon: Option<String>,
 }
 
-pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
-    let raw: Vec<ConfigEntry> = crate::nonfatal(|| {
+pub fn load() -> SearchConfig {
+    let raw: SearchConfig = crate::nonfatal(|| {
         let mut content = vec![];
         File::open("config.yaml")?.read_to_end(&mut content)?;
         Ok(serde_yaml::from_slice(&content)?)
     })
     .unwrap_or_default();
 
-    let index = raw.into_iter().map(|src| {
+    raw
+}
+
+pub fn index(config: &SearchConfig) -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
+    let index = config.index_manual.iter().map(|src| {
         let keys = src.names.iter();
 
         let path = match &src.icon {
@@ -26,7 +47,7 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
         };
         let display_icon = icon_from_file(path);
 
-        let target = src.target;
+        let target = src.target.clone();
         let launch = Box::new(move || {
             Command::new(&target[0])
                 .args(target[1..].iter()) //

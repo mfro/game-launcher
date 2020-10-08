@@ -1,0 +1,5 @@
+index_appx: true
+index_start_menu: true
+index_manual:
+  - names: [hello friend]
+    target: [C:\Windows\system32\cmd.exe,/C,start cmd.exe /C echo hello friend :) ^&^& pause ^> NUL]
