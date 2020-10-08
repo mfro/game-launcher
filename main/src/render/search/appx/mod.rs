@@ -3,7 +3,6 @@ use std::{
     fs::File,
     io::{prelude::*, Result},
     path::Path,
-    path::PathBuf,
     process::Command,
     str::FromStr,
 };
@@ -35,7 +34,12 @@ fn powershell<S: AsRef<str>>(cmd: S) -> Result<Vec<u8>> {
     const PS_PATH: &'static str = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe";
 
     let a = std::time::Instant::now();
-    let output = Command::new(PS_PATH).arg(cmd.as_ref()).output()?;
+    let output = Command::new(PS_PATH)
+        .arg("-NonInteractive")
+        .arg("-WindowStyle")
+        .arg("hidden")
+        .arg(cmd.as_ref())
+        .output()?;
     let b = std::time::Instant::now();
     println!("{:?} {}", b - a, cmd.as_ref());
 
@@ -241,12 +245,12 @@ fn find_resource<'a>(pris: &'a [PriInfo], name: &str, white: bool) -> Option<&'a
     fn find_resource<'a>(tree: &'a ResourceMapSubtree, tail: &str, white: bool) -> Option<&'a str> {
         for rsrc in &tree.resources {
             if rsrc.uri.to_lowercase().ends_with(&tail) {
-                println!("{}", rsrc.uri);
-                for candidate in &rsrc.candidates {
-                    if let Some(value) = &candidate.value {
-                        println!("  {}", value);
-                    }
-                }
+                // println!("{}", rsrc.uri);
+                // for candidate in &rsrc.candidates {
+                //     if let Some(value) = &candidate.value {
+                //         println!("  {}", value);
+                //     }
+                // }
 
                 let filtered: Vec<_> = rsrc
                     .candidates
@@ -287,7 +291,7 @@ fn find_resource<'a>(pris: &'a [PriInfo], name: &str, white: bool) -> Option<&'a
                     return Some(pass[0].value.as_ref().unwrap());
                 }
 
-                println!("fallback");
+                // println!("fallback");
                 for candidate in filtered.iter().rev() {
                     if let Some(value) = &candidate.value {
                         return Some(value);
@@ -350,11 +354,6 @@ pub fn luminance(i: &[f64; 3]) -> f64 {
 }
 
 pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
-    let out_dir = &PathBuf::from("appx");
-    if !out_dir.exists() {
-        std::fs::create_dir(out_dir).unwrap();
-    }
-
     let pm = PackageManager::new().unwrap();
 
     let raw = list_start_apps();

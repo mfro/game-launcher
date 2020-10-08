@@ -105,7 +105,7 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
                     None => {
                         return Err(Error::new(
                             ErrorKind::NotFound,
-                            "unable to extract icon for lnk",
+                            format!("unable to extract icon for lnk {:?}", path),
                         ))?
                     }
                 };

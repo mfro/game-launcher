@@ -108,14 +108,19 @@ pub fn extract_ico(lnk: &ShellLink) -> Option<Vec<u8>> {
         resolve(lnk)?
     };
 
-    if icon_path.ends_with(".ico") {
-        let mut data = vec![];
-        File::open(icon_path)
-            .unwrap()
-            .read_to_end(&mut data)
-            .unwrap();
+    let is_ico = crate::nonfatal(|| {
+        let mut magic = [0; 4];
+        File::open(&icon_path)?.read_exact(&mut magic)?;
+        Ok(magic == [0, 0, 1, 0])
+    })
+    .unwrap_or(false);
 
-        Some(data)
+    if is_ico {
+        crate::nonfatal(|| {
+            let mut data = vec![];
+            File::open(icon_path)?.read_to_end(&mut data)?;
+            Ok(data)
+        })
     } else {
         let libpath: Vec<_> = icon_path.encode_utf16().chain(std::iter::once(0)).collect();
         let libmodule = unsafe {
