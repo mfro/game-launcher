@@ -1,4 +1,12 @@
+Current index:
+    - manual configuration
+    - start menu lnk files
+    - Windows 10 Apps >:( this was so stupidly hard to do
+
 Indexing ideas:
     - NTFS MFT scan
     - Steam library
-    - Windows 10 Apps >:(
+
+ranking ideas:
+    - launch count
+    - launch date

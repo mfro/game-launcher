@@ -212,7 +212,7 @@ impl NTFileSystem<File> {
         use std::os::windows::ffi::OsStrExt;
         use std::os::windows::io::FromRawHandle;
 
-        let name = crate::to_wstr(drive_name.as_ref().as_os_str().encode_wide());
+        let name = crate::common::to_wstr(drive_name.as_ref().as_os_str().encode_wide());
         let drive = unsafe {
             win32_check!(CreateFileW(
                 name.as_ptr(),

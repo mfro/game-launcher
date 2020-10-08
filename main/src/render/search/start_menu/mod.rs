@@ -1,72 +1,13 @@
-use std::{
-    fs::DirEntry, fs::File, fs::ReadDir, io::prelude::*, io::Error, io::ErrorKind, path::Path,
-    path::PathBuf,
-};
+use std::{fs::File, io::prelude::*, io::Error, io::ErrorKind, path::PathBuf};
 
 use winapi::um::shellapi::ShellExecuteW;
 
 mod lnk;
 use lnk::ShellLink;
 
-use super::{icon_helper, IndexEntry, LaunchTarget};
+use crate::common::RecursiveSearch;
 
-struct RecursiveSearch {
-    stack: Vec<ReadDir>,
-}
-
-impl RecursiveSearch {
-    pub fn new<P: AsRef<Path>>(path: &P) -> RecursiveSearch {
-        let stack = match std::fs::read_dir(path) {
-            Ok(iter) => vec![iter],
-            Err(_) => vec![],
-        };
-
-        RecursiveSearch { stack }
-    }
-}
-
-impl Iterator for RecursiveSearch {
-    type Item = DirEntry;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let iter = match self.stack.last_mut() {
-                Some(iter) => iter,
-                None => break None,
-            };
-
-            let entry = match iter.next() {
-                Some(result) => match result {
-                    Err(_) => continue,
-                    Ok(entry) => entry,
-                },
-                None => {
-                    self.stack.pop();
-                    continue;
-                }
-            };
-
-            let ty = match entry.file_type() {
-                Ok(ty) => ty,
-                Err(_) => continue,
-            };
-
-            if ty.is_file() {
-                break Some(entry);
-            }
-
-            if ty.is_dir() {
-                match std::fs::read_dir(&entry.path()) {
-                    Ok(iter) => {
-                        self.stack.push(iter);
-                        continue;
-                    }
-                    Err(_) => continue,
-                }
-            };
-        }
-    }
-}
+use super::{IndexEntry, LaunchTarget};
 
 pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
     let appdata = std::env::var("APPDATA").unwrap();
@@ -102,9 +43,12 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
         })
         // open and parse the .lnk files
         .filter_map(|path| {
-            let mut raw = vec![];
-            File::open(&path).unwrap().read_to_end(&mut raw).unwrap();
-            let lnk = ShellLink::load(&raw);
+            let lnk = crate::nonfatal(|| {
+                let mut raw = vec![];
+                File::open(&path)?.read_to_end(&mut raw)?;
+                Ok(ShellLink::load(&raw))
+            })?;
+
             let target = lnk::resolve(&lnk)?;
             Some((path, target))
         })
@@ -151,8 +95,7 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
                 name.clone(),
             ];
 
-            let display_name = name.clone();
-            let display_icon = icon_helper(|| {
+            let display_icon = crate::nonfatal(|| {
                 let mut raw = vec![];
                 File::open(&path)?.read_to_end(&mut raw)?;
                 let lnk = ShellLink::load(&raw);
@@ -163,7 +106,7 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
                         return Err(Error::new(
                             ErrorKind::NotFound,
                             "unable to extract icon for lnk",
-                        ))
+                        ))?
                     }
                 };
 
@@ -174,8 +117,8 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
             let launch = Box::new(move || {
                 use std::os::windows::ffi::OsStrExt;
 
-                let op = crate::to_wstr("open".encode_utf16());
-                let raw = crate::to_wstr(path.as_os_str().encode_wide());
+                let op = crate::common::to_wstr("open".encode_utf16());
+                let raw = crate::common::to_wstr(path.as_os_str().encode_wide());
 
                 unsafe {
                     ShellExecuteW(
@@ -192,7 +135,6 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
             let index = IndexEntry::new(keys.into_iter());
 
             let target = LaunchTarget {
-                display_name,
                 display_icon,
                 launch,
             };

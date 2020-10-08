@@ -112,7 +112,7 @@ export default {
 
     menuStyle() {
       return {
-        'transform': `translateY(${this.selectedIndex * -54}px)`,
+        'transform': `translateY(${this.selectedIndex * -68}px)`,
         'transition': this.sliding ? 'all 200ms ease-out' : '',
       };
     },
@@ -127,7 +127,7 @@ export default {
     inputStyle() {
       if (this.selected && this.$refs.canvas) {
         let context = this.$refs.canvas.getContext('2d');
-        context.font = '500 24px Google Sans'
+        context.font = '500 32px Google Sans'
 
         let fullText = context.measureText(this.selected.key.slice(0, this.selected.end)).width;
         let inputText = context.measureText(this.inputDisplay).width;
@@ -208,6 +208,7 @@ export default {
     select(delta) {
       let index = (this.index + delta) % state.matches.length;
       if (index < 0) index += state.matches.length;
+      if (index == this.index) return;
       this.index = index;
 
       this.sliding = true;
@@ -233,7 +234,7 @@ canvas {
   width: 100vw;
   height: 100vh;
 
-  padding-top: (54px * 7);
+  padding-top: (68px * 6 + 8px) ;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -257,13 +258,13 @@ canvas {
     }
 
     > .search-bar {
+      @include text-result;
       width: 100%;
       z-index: 1;
 
       top: 0;
       left: 0;
-      padding: 12px 16px;
-      box-sizing: border-box;
+      padding-left: 96px;
 
       position: absolute;
       border-radius: 5px;

@@ -8,5 +8,5 @@ cp -r "$CEF_ROOT"/Resources/icudtl.dat "dist"
 cargo build --release
 cp "target/release/main.exe" dist
 
-yarn --cwd "../render" build
-cp -r "../render/dist" "dist/app"
+yarn --cwd "../ui" build
+cp -r "../ui/dist" "dist/app"

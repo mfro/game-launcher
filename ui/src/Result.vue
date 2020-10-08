@@ -1,12 +1,16 @@
 <template>
   <div class="result">
-    <div class="name">
-      <span class="hint" v-text="prefix" />
-      <span v-text="display" />
-      <span class="hint" v-text="suffix" />
-    </div>
+    <div class="icon" :style="iconStyle" />
 
-    <div class="icon" v-if="icon" :style="iconStyle" />
+    <div class="name" v-if="hint">
+      <span class="hint" v-text="match.key.slice(0, match.start)" />
+      <span v-text="match.key.slice(match.start, match.end)" />
+      <span class="hint" v-text="match.key.slice(match.end)" />
+    </div>
+    <div class="name" v-else-if="name">
+      <span v-text="match.key" />
+    </div>
+    <div class="name" v-else />
   </div>
 </template>
 
@@ -40,9 +44,12 @@ export default {
     },
 
     iconStyle() {
-      return {
-        'background-image': `url(${encodeURI(this.target.display_icon)})`,
-      };
+      let style = {};
+      if (this.icon) {
+        style['background-image'] = `url(${encodeURI(this.target.display_icon)})`;
+      }
+
+      return style;
     },
   },
 };
@@ -56,8 +63,7 @@ export default {
 
   > .name {
     flex: 1 1 0;
-    padding: 12px 16px;
-    white-space: pre;
+    @include text-result;
 
     > span {
       @include text;
@@ -74,10 +80,10 @@ export default {
 
   > .icon {
     flex: 0 0 auto;
-    width: 48px;
-    height: 48px;
+    width: 64px;
+    height: 64px;
     background-size: contain;
-    margin: 3px 16px;
+    margin: 2px 16px;
 
     transition: all 250ms;
   }

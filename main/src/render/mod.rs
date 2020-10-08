@@ -62,7 +62,7 @@ impl RenderProcessHandler for MyRenderProcessHandler {
         // let args = message.get_argument_list().unwrap();
 
         if name == "hook" {
-            let context = frame.get_v8context().unwrap();
+            let context = frame.get_v8context().expect("get v8 context");
             if context.enter() {
                 HOOK_CALLBACKS.with(|x| {
                     for callback in x.borrow().iter() {

@@ -17,9 +17,8 @@ use winapi::{
         dwmapi::DwmExtendFrameIntoClientArea,
         uxtheme::MARGINS,
         winuser::{
-            keybd_event, GetForegroundWindow, SetFocus, SetForegroundWindow, SetWindowLongPtrA,
-            GWL_EXSTYLE, GWL_STYLE, VK_LWIN, VK_RETURN, WM_KEYDOWN, WM_KEYUP, WS_EX_TOOLWINDOW,
-            WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
+            GetForegroundWindow, SetWindowLongPtrA, GWL_EXSTYLE, GWL_STYLE, VK_LWIN, VK_RETURN,
+            WM_KEYDOWN, WM_KEYUP, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
         },
     },
 };
@@ -40,40 +39,40 @@ impl SchemeHandlerFactory for MySchemeHandlerFactory {
         request: CefRequest,
     ) -> Option<CefResourceHandler> {
         let url = request.get_url().to_string();
-        let path = percent_decode_str(&url[4..]).decode_utf8().unwrap();
+        let path = percent_decode_str(&url[4..])
+            .decode_utf8()
+            .expect("invalid app: scheme request");
+
         let path = path.trim_start_matches('/');
 
         if path.starts_with("app/") {
-            let mut file = match File::open(&path) {
-                Ok(file) => file,
-                Err(_) => return Some(NotFoundResourceHandler.into()),
-            };
+            crate::nonfatal(|| {
+                let mut data = vec![];
+                File::open(&path)?.read_to_end(&mut data)?;
 
-            let mut data = vec![];
-            file.read_to_end(&mut data).unwrap();
+                let mime_type = match path.rfind('.') {
+                    None => "application/octet-stream".into(),
+                    Some(i) => match &path[i + 1..] {
+                        "html" => "text/html",
+                        "css" => "text/css",
+                        "js" => "text/javascript",
+                        "ttf" => "font/ttf",
+                        "png" => "image/png",
+                        "jpg" => "image/jpeg",
+                        "jpeg" => "image/jpeg",
+                        _ => panic!("unknown mime type: {}", path),
+                    },
+                };
 
-            let mime_type = match path.rfind('.') {
-                None => "application/octet-stream".into(),
-                Some(i) => match &path[i + 1..] {
-                    "html" => "text/html",
-                    "css" => "text/css",
-                    "js" => "text/javascript",
-                    "ttf" => "font/ttf",
-                    "png" => "image/png",
-                    "jpg" => "image/jpeg",
-                    "jpeg" => "image/jpeg",
-                    _ => panic!("unknown mime type: {}", path),
-                },
-            };
+                let headers = vec![];
 
-            let headers = vec![];
-
-            Some(CefResourceHandler::new(InMemoryResourceHandler {
-                mime_type: Some(mime_type.into()),
-                headers,
-                data,
-                index: 0,
-            }))
+                Ok(CefResourceHandler::new(InMemoryResourceHandler {
+                    mime_type: Some(mime_type.into()),
+                    headers,
+                    data,
+                    index: 0,
+                }))
+            })
         } else {
             Some(NotFoundResourceHandler.into())
         }
@@ -189,12 +188,14 @@ impl Client for MyClient {
         message: CefProcessMessage,
     ) -> bool {
         let name = message.get_name().to_string();
-        let args = message.get_argument_list().unwrap();
+        let args = message
+            .get_argument_list()
+            .expect("invalid process message (browser receiving)");
 
         if name == "toggle_window" {
             let visible = args.get_int(0);
 
-            let host = browser.get_host().unwrap();
+            let host = browser.get_host().expect("get browser host");
             let hwnd = host.get_window_handle() as HWND;
 
             toggle(hwnd, visible);
@@ -226,14 +227,7 @@ fn toggle(hwnd: HWND, state: i32) {
             if prev != hwnd {
                 PREVIOUS_FOCUS.lock().unwrap().set(Some(prev));
 
-                std::thread::spawn(move || {
-                    keybd_event(0x12, 0, 1, 0);
-
-                    SetForegroundWindow(hwnd as _);
-                    SetFocus(hwnd as _);
-
-                    keybd_event(0x12, 0, 3, 0);
-                });
+                std::thread::spawn(move || crate::common::focus_window(hwnd as _));
             }
         }
     } else {
@@ -243,12 +237,7 @@ fn toggle(hwnd: HWND, state: i32) {
 
             if state == 2 {
                 if let Some(prev) = PREVIOUS_FOCUS.lock().unwrap().take() {
-                    keybd_event(0x12, 0, 1, 0);
-
-                    SetForegroundWindow(prev as _);
-                    SetFocus(prev as _);
-
-                    keybd_event(0x12, 0, 3, 0);
+                    crate::common::focus_window(prev as _);
                 }
             }
         }
@@ -305,7 +294,7 @@ pub fn main(main_args: CefMainArgs, app: CefApp) {
         None,
         None,
     )
-    .unwrap();
+    .expect("browser creation");
 
     // if std::env::var("DEBUG_RENDER").is_ok() {
     //     let devtools_window_info = CefWindowInfo::default()
@@ -325,7 +314,7 @@ pub fn main(main_args: CefMainArgs, app: CefApp) {
     //     );
     // }
 
-    let host = browser.get_host().unwrap();
+    let host = browser.get_host().expect("get browser host");
     let hwnd = host.get_window_handle() as HWND;
 
     let margins = MARGINS {
@@ -345,8 +334,9 @@ pub fn main(main_args: CefMainArgs, app: CefApp) {
             held.insert(info.vkCode);
 
             if info.vkCode == VK_RETURN as u32 && held.contains(&(VK_LWIN as u32)) {
-                let frame = browser.get_main_frame().unwrap();
-                let msg = CefProcessMessage::create(&"hook".into()).unwrap();
+                let frame = browser.get_main_frame().expect("get browser main frame");
+                let msg =
+                    CefProcessMessage::create(&"hook".into()).expect("create process message");
 
                 frame.send_process_message(CefProcessId::RENDERER, msg);
             }

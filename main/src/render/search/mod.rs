@@ -1,10 +1,11 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, fs::File, io::prelude::*, path::Path};
 
 use cef::{v8, CefV8Context, CefV8Propertyattribute, CefV8Value};
 use mime_guess::Mime;
 
 mod assets;
 
+pub mod appx;
 mod config;
 mod start_menu;
 
@@ -34,7 +35,6 @@ impl IndexEntry {
 /// Contains information about a value in the index.
 /// That means a display name & icon for rendering, and a function to launch the target
 pub struct LaunchTarget {
-    display_name: String,
     display_icon: Option<(Mime, Vec<u8>)>,
     launch: Box<dyn Fn()>,
 }
@@ -58,18 +58,12 @@ impl cef::V8ArrayBufferReleaseCallback for ReleaseCallback {
 
 impl Search {
     pub fn new(ctx: &CefV8Context) -> Search {
-        unsafe { winapi::um::objbase::CoInitialize(std::ptr::null_mut()) };
-
         let start = std::time::Instant::now();
 
         let mut index = vec![];
 
         for (entry, info) in build_index() {
             let object = CefV8Value::create_object(None, None).unwrap();
-
-            let key = "display_name";
-            let value = info.display_name;
-            object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
 
             let key = "display_icon";
             let value: CefV8Value = match info.display_icon {
@@ -142,18 +136,18 @@ impl Search {
     }
 }
 
-pub fn icon_helper<F: FnOnce() -> std::io::Result<(Mime, Vec<u8>)>>(
-    f: F,
-) -> Option<(Mime, Vec<u8>)> {
-    match f() {
-        Ok((mime, data)) => Some((mime, data)),
-        Err(e) => {
-            println!("{:?}", e);
-            None
-        }
-    }
+pub fn icon_from_file<P: AsRef<Path>>(path: P) -> Option<(Mime, Vec<u8>)> {
+    crate::nonfatal(|| {
+        let mut data = vec![];
+        File::open(path.as_ref())?.read_to_end(&mut data)?;
+        let mime = mime_guess::from_path(path);
+        let mime = mime.first().unwrap();
+        Ok((mime, data))
+    })
 }
 
 fn build_index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
-    config::index().chain(start_menu::index())
+    config::index()
+        .chain(start_menu::index())
+        .chain(appx::index())
 }

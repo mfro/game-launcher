@@ -5,8 +5,14 @@
     background: none;
     -webkit-appearance: none;
 
-    font-size: 24px;
+    font-size: 32px;
     font-family: Google Sans;
     font-weight: 500;
     text-rendering: geometricPrecision;
+}
+
+@mixin text-result {
+    padding: 14px 0;
+    white-space: pre;
+    box-sizing: border-box;
 }

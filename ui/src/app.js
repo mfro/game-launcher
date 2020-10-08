@@ -64,12 +64,3 @@ export function hide(restore, callback) {
         }, 200);
     }
 }
-
-export function entry_match(search, entry) {
-    for (let key of entry.keys) {
-        if (key.toLowerCase().startsWith(search))
-            return key;
-    }
-
-    return null;
-}
