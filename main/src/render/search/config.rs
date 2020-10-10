@@ -1,9 +1,10 @@
 use std::{fs::File, io::prelude::*, process::Command};
 
-use super::{icon_from_file, IndexEntry, LaunchTarget};
+use super::{IndexEntry, LaunchTarget};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SearchConfig {
+    pub index_steam: Option<String>,
     pub index_appx: bool,
     pub index_start_menu: bool,
     pub index_manual: Vec<ConfigIndexEntry>,
@@ -12,6 +13,7 @@ pub struct SearchConfig {
 impl Default for SearchConfig {
     fn default() -> Self {
         SearchConfig {
+            index_steam: None,
             index_appx: true,
             index_start_menu: true,
             index_manual: vec![],
@@ -41,11 +43,11 @@ pub fn index(config: &SearchConfig) -> impl Iterator<Item = (IndexEntry, LaunchT
     let index = config.index_manual.iter().map(|src| {
         let keys = src.names.iter();
 
-        let path = match &src.icon {
+        let icon_path = match &src.icon {
             Some(name) => name,
             None => &src.names[0],
         };
-        let display_icon = icon_from_file(path);
+        let display_icon = crate::nonfatal(|| Ok(image::open(icon_path)?));
 
         let target = src.target.clone();
         let launch = Box::new(move || {

@@ -1,6 +1,6 @@
 <template>
   <div class="result">
-    <div class="icon" :style="iconStyle" />
+    <div class="icon" ref="icon" />
 
     <div class="name" v-if="hint">
       <span class="hint" v-text="match.key.slice(0, match.start)" />
@@ -15,6 +15,7 @@
 </template>
 
 <script>
+import { watchEffect } from 'vue';
 export default {
   name: 'result',
 
@@ -51,6 +52,18 @@ export default {
 
       return style;
     },
+  },
+
+  mounted() {
+    watchEffect(() => {
+      let box = this.$refs.icon;
+      if (box == null) return;
+      while (box.firstChild) box.removeChild(box.firstChild);
+
+      if (this.icon && this.target.display_icon) {
+        box.appendChild(this.target.display_icon);
+      }
+    });
   },
 };
 </script>

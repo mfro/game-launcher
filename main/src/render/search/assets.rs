@@ -15,7 +15,13 @@ pub fn create_asset(ctx: &CefV8Context, mime: &Mime, data: &mut [u8]) -> CefV8Va
         println!("create asset factory");
         // CEF/Chromium crashes when using an external ArrayBuffer in a blob for some reason
         // so slice() to copy it to a V8/JS managed ArrayBuffer
-        let js = "window._asset_factory = (type, data) => URL.createObjectURL(new Blob([data.slice()], { type }))";
+        let js = "window._asset_factory = (type, data) => {
+            let url = URL.createObjectURL(new Blob([data.slice()], { type }));
+            let img = new Image();
+            img.src = url
+            img.onload = () => URL.revokeObjectURL(url);
+            return img;
+        }";
 
         let mut retval = None;
         let mut error = None;

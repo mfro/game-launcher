@@ -142,21 +142,21 @@ macro_rules! num_impl {
         #[repr(C)]
         #[derive(Copy, Clone, Default)]
         pub struct $lename {
-            raw: $num,
+            raw: [u8; std::mem::size_of::<$num>()],
         }
 
         impl $lename {
             pub fn new(value: $num) -> Self {
-                let raw = value.to_le();
+                let raw = value.to_le_bytes();
                 Self { raw }
             }
 
             pub fn get(self) -> $num {
-                <$num>::from_le(self.raw)
+                <$num>::from_le_bytes(self.raw)
             }
 
             pub fn set(&mut self, value: $num) {
-                self.raw = value.to_le()
+                self.raw = value.to_le_bytes()
             }
         }
 
@@ -170,21 +170,21 @@ macro_rules! num_impl {
         #[repr(C)]
         #[derive(Copy, Clone, Default)]
         pub struct $bename {
-            raw: $num,
+            raw: [u8; std::mem::size_of::<$num>()],
         }
 
         impl $bename {
             pub fn new(value: $num) -> Self {
-                let raw = value.to_be();
+                let raw = value.to_be_bytes();
                 Self { raw }
             }
 
             pub fn get(self) -> $num {
-                <$num>::from_be(self.raw)
+                <$num>::from_be_bytes(self.raw)
             }
 
             pub fn set(&mut self, value: $num) {
-                self.raw = value.to_be()
+                self.raw = value.to_be_bytes()
             }
         }
 
@@ -298,6 +298,9 @@ flat_data_array!(29);
 pub use prelude::*;
 pub mod prelude {
     pub use crate::{self as flat, Flat, FlatBase, FlatMut, LoadExt, StoreExt};
+
+    num_impl!(f32, f32le, f32be);
+    num_impl!(f64, f64le, f64be);
 
     num_impl!(u8, u8le, u8be);
     num_impl!(u16, u16le, u16be);

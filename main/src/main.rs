@@ -22,6 +22,9 @@ extern crate serde_derive;
 #[macro_use]
 extern crate flat;
 
+use std::{fs::OpenOptions, io::prelude::*, io::Error, io::ErrorKind, path::Path};
+
+use backtrace::Backtrace;
 use cef::{
     cef_execute_process, App, CefApp, CefCommandLine, CefMainArgs, CefRenderProcessHandler,
     CefSchemeOptions, CefSchemeRegistrar, CefString,
@@ -90,10 +93,33 @@ pub fn nonfatal<T, F>(f: F) -> Option<T>
 where
     F: FnOnce() -> Result<T, MyError>,
 {
+    fn log(e: MyError) -> std::io::Result<()> {
+        let log_dir = if Path::new("config.yaml").exists() {
+            std::env::current_dir()?
+        } else {
+            match std::env::current_exe()?.parent() {
+                Some(p) => p.to_owned(),
+                None => return Err(Error::new(ErrorKind::NotFound, "?")),
+            }
+        };
+
+        let log_path = log_dir.join("error.log");
+
+        let mut file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&log_path)?;
+
+        writeln!(file, "{:?}", e.inner)?;
+        writeln!(file, "{:?}", e.trace)?;
+
+        Ok(())
+    }
+
     match f() {
         Ok(v) => Some(v),
         Err(e) => {
-            println!("{:?}", e.inner);
+            let _ = log(e);
             None
         }
     }
@@ -101,39 +127,45 @@ where
 
 pub struct MyError {
     inner: Box<dyn std::fmt::Debug>,
+    trace: Backtrace,
 }
 
-impl From<std::io::Error> for MyError {
-    fn from(src: std::io::Error) -> Self {
+impl From<Error> for MyError {
+    fn from(src: Error) -> Self {
         let inner = Box::new(src);
-        MyError { inner }
+        let trace = Backtrace::new();
+        MyError { inner, trace }
     }
 }
 
 impl From<winrt::Error> for MyError {
     fn from(src: winrt::Error) -> Self {
         let inner = Box::new(src);
-        MyError { inner }
+        let trace = Backtrace::new();
+        MyError { inner, trace }
     }
 }
 
 impl From<serde_yaml::Error> for MyError {
     fn from(src: serde_yaml::Error) -> Self {
         let inner = Box::new(src);
-        MyError { inner }
+        let trace = Backtrace::new();
+        MyError { inner, trace }
     }
 }
 
 impl From<quick_xml::DeError> for MyError {
     fn from(src: quick_xml::DeError) -> Self {
         let inner = Box::new(src);
-        MyError { inner }
+        let trace = Backtrace::new();
+        MyError { inner, trace }
     }
 }
 
 impl From<image::ImageError> for MyError {
     fn from(src: image::ImageError) -> Self {
         let inner = Box::new(src);
-        MyError { inner }
+        let trace = Backtrace::new();
+        MyError { inner, trace }
     }
 }

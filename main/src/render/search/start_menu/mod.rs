@@ -1,5 +1,6 @@
 use std::{fs::File, io::prelude::*, io::Error, io::ErrorKind, path::PathBuf};
 
+use image::ImageFormat;
 use winapi::um::shellapi::ShellExecuteW;
 
 mod lnk;
@@ -110,7 +111,10 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
                     }
                 };
 
-                Ok(("image/x-icon".parse().unwrap(), data))
+                Ok(image::load_from_memory_with_format(
+                    &data,
+                    ImageFormat::Ico,
+                )?)
             });
 
             let path = path.clone();

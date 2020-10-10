@@ -1,13 +1,14 @@
-use std::{cmp::Ordering, fs::File, io::prelude::*, path::Path};
+use std::cmp::Ordering;
 
 use cef::{v8, CefV8Context, CefV8Propertyattribute, CefV8Value};
-use mime_guess::Mime;
+use image::{imageops::FilterType, png::PngEncoder, ColorType, DynamicImage};
 
 mod assets;
 
 pub mod appx;
 mod config;
 mod start_menu;
+mod steam;
 
 pub type MatchScore = [usize; 2];
 
@@ -41,7 +42,7 @@ impl IndexEntry {
 /// Contains information about a value in the index.
 /// That means a display name & icon for rendering, and a function to launch the target
 pub struct LaunchTarget {
-    display_icon: Option<(Mime, Vec<u8>)>,
+    display_icon: Option<DynamicImage>,
     launch: Box<dyn Fn()>,
 }
 
@@ -74,8 +75,31 @@ impl Search {
 
             let key = "display_icon";
             let value: CefV8Value = match info.display_icon {
-                Some((mime, mut data)) => assets::create_asset(ctx, &mime, &mut data),
-                None => "app://notfound".into(),
+                None => ().into(),
+                Some(image) => {
+                    let image = image.to_rgba();
+
+                    let scaled = if image.dimensions().0 <= 32 {
+                        println!("{}: {}", entry.keys[0], image.dimensions().0);
+                        image::imageops::resize(&image, 64, 64, FilterType::Nearest)
+                    } else {
+                        if image.dimensions().0 < 64 {
+                            println!("{}: {}", entry.keys[0], image.dimensions().0)
+                        }
+
+                        image::imageops::resize(&image, 64, 64, FilterType::CatmullRom)
+                    };
+
+                    let mut out = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
+                    image::imageops::overlay(&mut out, &scaled, 0, 0);
+
+                    let mut data = vec![];
+                    PngEncoder::new(&mut data)
+                        .encode(out.as_raw(), out.width(), out.height(), ColorType::Rgba8)
+                        .unwrap();
+
+                    assets::create_asset(ctx, &"image/png".parse().unwrap(), &mut data)
+                }
             };
             object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
 
@@ -150,16 +174,6 @@ impl Search {
     }
 }
 
-pub fn icon_from_file<P: AsRef<Path>>(path: P) -> Option<(Mime, Vec<u8>)> {
-    crate::nonfatal(|| {
-        let mut data = vec![];
-        File::open(path.as_ref())?.read_to_end(&mut data)?;
-        let mime = mime_guess::from_path(path);
-        let mime = mime.first().unwrap();
-        Ok((mime, data))
-    })
-}
-
 fn build_index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
     let config = config::load();
 
@@ -169,8 +183,12 @@ fn build_index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
         index.extend(appx::index());
     }
 
-    if config.index_appx {
+    if config.index_start_menu {
         index.extend(start_menu::index());
+    }
+
+    if let Some(steam_dir) = config.index_steam {
+        index.extend(steam::index(&steam_dir));
     }
 
     index.into_iter()

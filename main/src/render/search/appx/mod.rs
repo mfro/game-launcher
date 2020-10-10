@@ -8,7 +8,7 @@ use std::{
 };
 
 use com::{interfaces::IUnknown, runtime::create_instance, sys::GUID};
-use image::{imageops::FilterType, png::PngEncoder, ColorType};
+use image::{imageops::FilterType, DynamicImage};
 use lazy_static::lazy_static;
 use winapi::{
     shared::minwindef::DWORD, shared::minwindef::LPARAM, shared::windef::HWND,
@@ -464,18 +464,10 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
                 let src = image::open(logo_path)?;
                 let src = src.resize(64, 64, FilterType::CatmullRom);
 
-                let mut full = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
-                image::imageops::overlay(&mut full, &src, 0, 0);
+                let mut out = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
+                image::imageops::overlay(&mut out, &src, 0, 0);
 
-                let mut out = vec![];
-                PngEncoder::new(&mut out).encode(
-                    full.as_raw(),
-                    full.width(),
-                    full.height(),
-                    ColorType::Rgba8,
-                )?;
-
-                Ok(("image/png".parse().unwrap(), out))
+                Ok(DynamicImage::ImageRgba8(out))
             });
 
             let index = IndexEntry::new(keys.iter());

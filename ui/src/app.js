@@ -13,28 +13,12 @@ search.hook(() => {
     state.visible = true;
 });
 
-const asset_urls = [];
 watchEffect(() => {
     let matches = search.search(state.search);
-
-    for (let match of matches) {
-        let url = match.target.display_icon;
-
-        if (typeof url == 'number') {
-            if (url in asset_urls) {
-                match.target.display_icon = asset_urls[url];
-            } else {
-                let asset = search.assets[url];
-                let blob = new Blob([Uint8Array.from(asset.data)], { type: asset.type });
-                match.target.display_icon = asset_urls[url] = URL.createObjectURL(blob);
-            }
-        }
-    }
-
     state.matches = markRaw(matches);
 });
 
-window.addEventListener('blur', e => hide(true));
+// window.addEventListener('blur', e => hide(true));
 
 window.addEventListener('focus', e => {
     state.instance.$refs.input.focus();

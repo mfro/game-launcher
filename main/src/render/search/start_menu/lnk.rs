@@ -19,27 +19,7 @@ use winapi::{
 
 use flat::prelude::*;
 
-flat_data!(IconHeader);
-#[repr(C, packed)]
-#[derive(Copy, Clone)]
-pub struct IconHeader {
-    pub _reserved: u16le,
-    pub image_type: u16le,
-    pub image_count: u16le,
-}
-
-flat_data!(IconImageHeader);
-#[repr(C, packed)]
-#[derive(Copy, Clone)]
-pub struct IconImageHeader {
-    pub width: u8,
-    pub height: u8,
-    pub colors: u8,
-    pub _reserved: u8,
-    pub color_planes: u16,
-    pub bits_per_pixel: u16,
-    pub size: u32,
-}
+use crate::common::{IconHeader, IconImageHeader};
 
 pub struct ShellLink {
     pub link_flags: LinkFlags,
