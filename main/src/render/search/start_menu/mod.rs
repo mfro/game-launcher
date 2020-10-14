@@ -6,7 +6,7 @@ use winapi::um::shellapi::ShellExecuteW;
 mod lnk;
 use lnk::ShellLink;
 
-use crate::common::RecursiveSearch;
+use crate::common::{RecursiveSearch, ToWide};
 
 use super::{IndexEntry, LaunchTarget};
 
@@ -121,10 +121,8 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
 
             let path = path.clone();
             let launch = Box::new(move || {
-                use std::os::windows::ffi::OsStrExt;
-
-                let op = crate::common::to_wstr("open".encode_utf16());
-                let raw = crate::common::to_wstr(path.as_os_str().encode_wide());
+                let op = "open".to_wide();
+                let raw = path.to_wide();
 
                 unsafe {
                     ShellExecuteW(

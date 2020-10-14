@@ -1,4 +1,4 @@
-use std::{fs::File, io::prelude::*, path::Path};
+use std::{fs::File, io::prelude::*, marker::PhantomData, path::Path};
 
 use winapi::{
     shared::minwindef::HMODULE,
@@ -9,6 +9,8 @@ use winapi::{
 };
 
 use flat::prelude::*;
+
+use super::ToWide;
 
 flat_data!(IconHeader);
 #[repr(C, packed)]
@@ -32,6 +34,58 @@ pub struct IconImageHeader {
     pub size: u32le,
 }
 
+struct ResourceLibrary<'a> {
+    handle: HMODULE,
+    _lifetime: PhantomData<&'a ()>,
+}
+
+impl Drop for ResourceLibrary<'_> {
+    fn drop(&mut self) {
+        unsafe {
+            FreeLibrary(self.handle);
+        }
+    }
+}
+
+impl<'a> ResourceLibrary<'a> {
+    pub fn load<P: ToWide>(path: P) -> ResourceLibrary<'a> {
+        let path = path.to_wide();
+
+        let handle = unsafe {
+            LoadLibraryExW(
+                path.as_ptr(),
+                std::ptr::null_mut(),
+                LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE,
+            )
+        };
+
+        let _lifetime = Default::default();
+
+        ResourceLibrary { handle, _lifetime }
+    }
+
+    pub fn load_resource(&self, name: *const u16, ty: u16) -> Option<&'a [u8]> {
+        if self.handle.is_null() {
+            return None;
+        }
+
+        let slice = unsafe {
+            let resource = FindResourceW(self.handle, name, ty as _);
+            if resource.is_null() {
+                return None;
+            }
+
+            let len = SizeofResource(self.handle, resource);
+            let rsrc = LoadResource(self.handle, resource);
+            let pointer = LockResource(rsrc);
+
+            std::slice::from_raw_parts(pointer as *mut u8, len as usize)
+        };
+
+        Some(slice)
+    }
+}
+
 pub fn extract_icons(path: &Path) -> std::io::Result<Vec<Vec<u8>>> {
     let mut magic = [0; 4];
     File::open(&path)?.read_exact(&mut magic)?;
@@ -41,59 +95,23 @@ pub fn extract_icons(path: &Path) -> std::io::Result<Vec<Vec<u8>>> {
         File::open(path)?.read_to_end(&mut data)?;
         Ok(vec![data])
     } else {
-        let libpath: Vec<_> = path
-            .to_str()
-            .unwrap()
-            .encode_utf16()
-            .chain(std::iter::once(0))
-            .collect();
-
-        let libmodule = unsafe {
-            LoadLibraryExW(
-                libpath.as_ptr(),
-                std::ptr::null_mut(),
-                LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE,
-            )
-        };
-
-        fn load_resource(module: HMODULE, name: *const u16, ty: u16) -> Option<&'static [u8]> {
-            unsafe {
-                let resource = FindResourceW(module, name, ty as _);
-                if resource.is_null() {
-                    return None;
-                }
-
-                let size = SizeofResource(module, resource);
-                let handle = LoadResource(module, resource);
-                let resource_raw = LockResource(handle);
-
-                Some(std::slice::from_raw_parts(
-                    resource_raw as *mut u8,
-                    size as usize,
-                ))
-            }
+        struct LParam<'a> {
+            module: ResourceLibrary<'a>,
+            icons: Vec<Vec<u8>>,
         }
 
-        let mut indexes: Vec<isize> = vec![];
-        unsafe {
-            unsafe extern "system" fn iter_fn(
-                _module: HMODULE,
-                _ty: *const u16,
-                name: *mut u16,
-                lparam: isize,
-            ) -> i32 {
-                let out = lparam as *mut Vec<isize>;
-                (*out).push(name as isize);
-                1
-            }
+        unsafe extern "system" fn iter_fn(
+            libmodule: HMODULE,
+            _ty: *const u16,
+            name: *mut u16,
+            lparam: isize,
+        ) -> i32 {
+            let state = &mut *(lparam as *mut LParam);
 
-            let lparam = &mut indexes as *mut _ as isize;
-            EnumResourceNamesW(libmodule, 14 as _, Some(iter_fn), lparam);
-        }
-
-        let mut icons = vec![];
-        for idx in indexes {
-            let mut cursor = load_resource(libmodule, idx as _, 14).unwrap();
+            let mut cursor = match state.module.load_resource(name, 14) {
+                Some(x) => x,
+                None => panic!("{:?} {:?}", libmodule, name),
+            };
 
             let header: &IconHeader = cursor.load();
             let mut file_header = vec![];
@@ -107,16 +125,26 @@ pub fn extract_icons(path: &Path) -> std::io::Result<Vec<Vec<u8>>> {
                 file_header.store(image_header);
                 file_header.store(6 + 16 * image_count as u32 + file_blob.len() as u32);
 
-                let image = load_resource(libmodule, image_id as _, 3).unwrap();
+                let image = state.module.load_resource(image_id as _, 3).unwrap();
                 file_blob.extend_from_slice(image);
             }
 
             file_header.append(&mut file_blob);
-            icons.push(file_header);
+            state.icons.push(file_header);
+
+            1
         }
 
-        unsafe { FreeLibrary(libmodule) };
+        let mut state = LParam {
+            module: ResourceLibrary::load(path),
+            icons: vec![],
+        };
 
-        Ok(icons)
+        unsafe {
+            let lparam = &mut state as *mut _ as isize;
+            EnumResourceNamesW(state.module.handle, 14 as _, Some(iter_fn), lparam);
+        }
+
+        Ok(state.icons)
     }
 }

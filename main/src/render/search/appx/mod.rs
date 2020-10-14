@@ -17,7 +17,10 @@ use winapi::{
 };
 
 use super::{IndexEntry, LaunchTarget};
-use crate::{bindings::windows::management::deployment::PackageManager, common::Dll};
+use crate::{
+    bindings::windows::management::deployment::PackageManager,
+    common::{Dll, ToWide},
+};
 
 #[com_interface("2e941141-7f97-4756-ba1d-9decde894a3d")]
 pub trait IApplicationActivationManager: IUnknown {
@@ -215,8 +218,7 @@ fn load_pri<P: AsRef<OsStr>>(path: P) -> PriInfo {
             unsafe { std::mem::transmute(mrmsupport.get_function("MrmFreeMemory").unwrap()) };
     }
 
-    use std::os::windows::ffi::OsStrExt;
-    let raw = crate::common::to_wstr(path.as_ref().encode_wide());
+    let raw = path.as_ref().to_wide();
     let mut out_data: *mut u8 = std::ptr::null_mut();
     let mut out_size = 0;
     let data = unsafe {
@@ -480,7 +482,7 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
                     data4: [0x8A, 0xB7, 0x56, 0xEA, 0x90, 0x78, 0x94, 0x3C],
                 };
 
-                let raw = crate::common::to_wstr(launch_id.encode_utf16());
+                let raw = launch_id.to_wide();
 
                 unsafe {
                     std::thread::spawn(move || {

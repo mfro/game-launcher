@@ -4,6 +4,8 @@ use winapi::{
     um::libloaderapi::LoadLibraryW,
 };
 
+use super::ToWide;
+
 unsafe impl Sync for Dll {}
 
 #[derive(Copy, Clone)]
@@ -13,7 +15,7 @@ pub struct Dll {
 
 impl Dll {
     pub fn load<S: AsRef<str>>(name: S) -> Result<Dll> {
-        let raw = crate::common::to_wstr(name.as_ref().encode_utf16());
+        let raw = name.as_ref().to_wide();
         let handle = unsafe { LoadLibraryW(raw.as_ptr()) };
         if handle.is_null() {
             let error = unsafe { GetLastError() };
