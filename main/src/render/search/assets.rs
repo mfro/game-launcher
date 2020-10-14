@@ -1,8 +1,6 @@
-use mime_guess::Mime;
-
 use cef::{CefV8Context, CefV8Value, V8ArrayBufferReleaseCallback};
 
-pub fn create_asset(ctx: &CefV8Context, mime: &Mime, data: &mut [u8]) -> CefV8Value {
+pub fn create_asset(ctx: &CefV8Context, mime: &str, data: &mut [u8]) -> CefV8Value {
     let key = "_asset_factory".into();
 
     let mut factory = ctx
@@ -33,7 +31,7 @@ pub fn create_asset(ctx: &CefV8Context, mime: &Mime, data: &mut [u8]) -> CefV8Va
         factory = retval.unwrap();
     }
 
-    let mime = mime.to_string().into();
+    let mime = mime.into();
     let data = CefV8Value::create_array_buffer(data, ReleaseCallback).unwrap();
 
     factory.execute_function(None, &[mime, data]).unwrap()

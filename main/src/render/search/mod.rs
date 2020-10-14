@@ -26,7 +26,14 @@ impl IndexEntry {
 
     pub fn do_match(&self, query: &str) -> Option<(&str, usize, MatchScore)> {
         for key in &self.keys {
-            if let Some(index) = key.to_lowercase().find(&query) {
+            let lower = key.to_lowercase();
+
+            if let Some(byte) = lower.find(&query) {
+                let index = lower
+                    .char_indices()
+                    .position(|(idx, _)| idx == byte)
+                    .unwrap();
+
                 let chars: Vec<_> = key.chars().take(index).collect();
                 let word_index = chars.iter().filter(|&&c| c == ' ').count();
                 let char_index = chars.iter().rev().position(|&x| x == ' ').unwrap_or(index);
@@ -42,6 +49,7 @@ impl IndexEntry {
 /// Contains information about a value in the index.
 /// That means a display name & icon for rendering, and a function to launch the target
 pub struct LaunchTarget {
+    details: String,
     display_icon: Option<DynamicImage>,
     launch: Box<dyn Fn()>,
 }
@@ -73,6 +81,10 @@ impl Search {
         for (entry, info) in build_index() {
             let object = CefV8Value::create_object(None, None).unwrap();
 
+            let key = "details";
+            let value = &info.details;
+            object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
+
             let key = "display_icon";
             let value: CefV8Value = match info.display_icon {
                 None => ().into(),
@@ -98,7 +110,7 @@ impl Search {
                         .encode(out.as_raw(), out.width(), out.height(), ColorType::Rgba8)
                         .unwrap();
 
-                    assets::create_asset(ctx, &"image/png".parse().unwrap(), &mut data)
+                    assets::create_asset(ctx, "image/png", &mut data)
                 }
             };
             object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
@@ -139,10 +151,10 @@ impl Search {
                 o => return o,
             };
 
-            match Ord::cmp(&a.key.len(), &b.key.len()) {
-                Ordering::Equal => {}
-                o => return o,
-            }
+            // match Ord::cmp(&a.key.len(), &b.key.len()) {
+            //     Ordering::Equal => {}
+            //     o => return o,
+            // }
 
             Ord::cmp(a.key, b.key)
         });

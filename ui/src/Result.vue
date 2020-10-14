@@ -2,15 +2,21 @@
   <div class="result">
     <div class="icon" ref="icon" />
 
-    <div class="name" v-if="hint">
-      <span class="hint" v-text="match.key.slice(0, match.start)" />
-      <span v-text="match.key.slice(match.start, match.end)" />
-      <span class="hint" v-text="match.key.slice(match.end)" />
+    <div class="content">
+      <div class="name" v-if="hint">
+        <span class="hint" v-text="match.key.slice(0, match.start)" />
+        <span v-text="match.key.slice(match.start, match.end)" />
+        <span class="hint" v-text="match.key.slice(match.end)" />
+      </div>
+      <div class="name" v-else-if="name">
+        <span v-text="match.key" />
+      </div>
+      <div class="name" v-else />
+
+      <div class="details" v-if="name">
+        <span v-text="target.details"/>
+      </div>
     </div>
-    <div class="name" v-else-if="name">
-      <span v-text="match.key" />
-    </div>
-    <div class="name" v-else />
   </div>
 </template>
 
@@ -74,21 +80,49 @@ export default {
 .result {
   display: flex;
 
-  > .name {
+  > .content {
+    height: 80px;
+    box-sizing: border-box;
+
     flex: 1 1 0;
-    @include text-result;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 12px 0;
+    margin-right: 8px;
+    overflow: hidden;
 
-    > span {
-      @include text;
-
-      &.hint {
-        color: #888;
-      }
+    > .grow {
+      flex: 1 1 0;
     }
 
-    // .animate {
-    //   transition: color 250ms;
-    // }
+    > .name {
+      padding: 0;
+      white-space: pre;
+
+      > span {
+        @include text-title;
+
+        &.hint {
+          color: #888;
+        }
+      }
+
+      // .animate {
+      //   transition: color 250ms;
+      // }
+    }
+
+    > .details {
+      display: flex;
+
+      > span {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        @include text-details;
+      }
+    }
   }
 
   > .icon {
@@ -96,7 +130,7 @@ export default {
     width: 64px;
     height: 64px;
     background-size: contain;
-    margin: 2px 16px;
+    margin: 8px;
 
     transition: all 250ms;
   }

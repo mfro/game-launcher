@@ -96,6 +96,8 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
                 name.clone(),
             ];
 
+            let details = path.to_str().unwrap().to_string();
+
             let display_icon = crate::nonfatal(|| {
                 let mut raw = vec![];
                 File::open(&path)?.read_to_end(&mut raw)?;
@@ -139,6 +141,7 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
             let index = IndexEntry::new(keys.into_iter());
 
             let target = LaunchTarget {
+                details,
                 display_icon,
                 launch,
             };

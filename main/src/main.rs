@@ -1,11 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-extern crate base64;
 extern crate bitflags;
 extern crate cef;
 extern crate image;
 extern crate lazy_static;
-extern crate mime_guess;
 extern crate percent_encoding;
 extern crate quick_xml;
 extern crate serde;
@@ -22,7 +20,7 @@ extern crate serde_derive;
 #[macro_use]
 extern crate flat;
 
-use std::{fs::OpenOptions, io::prelude::*, io::Error, io::ErrorKind, path::Path};
+use std::{fs::OpenOptions, io::prelude::*, io::Error, io::ErrorKind, path::Path, path::PathBuf};
 
 use backtrace::Backtrace;
 use cef::{
@@ -72,6 +70,11 @@ impl App for MyApp {
 fn main() {
     unsafe { winapi::um::objbase::CoInitialize(std::ptr::null_mut()) };
 
+    let x = log_path().unwrap();
+    if x.exists() {
+        std::fs::remove_file(x).unwrap();
+    }
+
     // render::search::appx::index();
     // let x = render::search::Search::new();
     // x.search("valor".to_owned());
@@ -89,21 +92,25 @@ fn main() {
     browser::main(main_args, app);
 }
 
+fn log_path() -> std::io::Result<PathBuf> {
+    let log_dir = if Path::new("config.yaml").exists() {
+        std::env::current_dir()?
+    } else {
+        match std::env::current_exe()?.parent() {
+            Some(p) => p.to_owned(),
+            None => return Err(Error::new(ErrorKind::NotFound, "?")),
+        }
+    };
+
+    Ok(log_dir.join("error.log"))
+}
+
 pub fn nonfatal<T, F>(f: F) -> Option<T>
 where
     F: FnOnce() -> Result<T, MyError>,
 {
     fn log(e: MyError) -> std::io::Result<()> {
-        let log_dir = if Path::new("config.yaml").exists() {
-            std::env::current_dir()?
-        } else {
-            match std::env::current_exe()?.parent() {
-                Some(p) => p.to_owned(),
-                None => return Err(Error::new(ErrorKind::NotFound, "?")),
-            }
-        };
-
-        let log_path = log_dir.join("error.log");
+        let log_path = log_path()?;
 
         let mut file = OpenOptions::new()
             .append(true)

@@ -45,6 +45,6 @@ export function hide(restore, callback) {
             search.toggle(restore ? 2 : 0);
             state.instance.reset();
             callback && callback()
-        }, 200);
+        }, 250);
     }
 }

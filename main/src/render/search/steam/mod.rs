@@ -12,7 +12,7 @@ use vdf_text::{key_value, AnyValue};
 mod vdf_binary;
 use vdf_binary::ValveDeserializer;
 
-use crate::common::{extract_icons, RecursiveSearch};
+use crate::common::{extract_icons};
 
 use super::{IndexEntry, LaunchTarget};
 
@@ -252,6 +252,8 @@ pub fn index(dir: &str) -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
 
             let keys = vec![app.name.clone()];
 
+            let details = format!("Steam Game");
+
             let display_icon = all_icons.get(0).and_then(|data| {
                 crate::nonfatal(|| {
                     Ok(image::load_from_memory_with_format(
@@ -273,6 +275,7 @@ pub fn index(dir: &str) -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
             let index = IndexEntry::new(keys.into_iter());
 
             let target = LaunchTarget {
+                details,
                 display_icon,
                 launch,
             };

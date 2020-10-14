@@ -33,15 +33,12 @@ pub trait IApplicationActivationManager: IUnknown {
 fn powershell<S: AsRef<str>>(cmd: S) -> Result<Vec<u8>> {
     const PS_PATH: &'static str = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe";
 
-    let a = std::time::Instant::now();
     let output = Command::new(PS_PATH)
         .arg("-NonInteractive")
         .arg("-WindowStyle")
         .arg("hidden")
         .arg(cmd.as_ref())
         .output()?;
-    let b = std::time::Instant::now();
-    println!("{:?} {}", b - a, cmd.as_ref());
 
     Ok(output.stdout)
 }
@@ -460,6 +457,8 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
 
             let keys = [app_name];
 
+            let details = family_name.to_string();
+
             let display_icon = crate::nonfatal(|| {
                 let src = image::open(logo_path)?;
                 let src = src.resize(64, 64, FilterType::CatmullRom);
@@ -523,6 +522,7 @@ pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
             });
 
             let target = LaunchTarget {
+                details,
                 display_icon,
                 launch,
             };

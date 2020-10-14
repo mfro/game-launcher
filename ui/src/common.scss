@@ -1,18 +1,32 @@
-@mixin text {
+@mixin text-title {
     padding: 0;
     border: none;
     outline: none;
     background: none;
     -webkit-appearance: none;
 
-    font-size: 32px;
+    font-size: 24px;
+    font-family: Google Sans;
+    font-weight: 500;
+    text-rendering: geometricPrecision;
+}
+
+@mixin text-details {
+    padding: 0;
+    border: none;
+    outline: none;
+    background: none;
+    -webkit-appearance: none;
+
+    color: #505050;
+    font-size: 14px;
     font-family: Google Sans;
     font-weight: 500;
     text-rendering: geometricPrecision;
 }
 
 @mixin text-result {
-    padding: 14px 0;
+    padding: 8px;
     white-space: pre;
     box-sizing: border-box;
 }

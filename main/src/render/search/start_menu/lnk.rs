@@ -10,9 +10,7 @@ use winapi::{
             LockResource, SizeofResource, LOAD_LIBRARY_AS_DATAFILE, LOAD_LIBRARY_AS_IMAGE_RESOURCE,
         },
         processenv::ExpandEnvironmentStringsW,
-        shellapi::SHGetFileInfoW,
-        shellapi::SHFILEINFOW,
-        shellapi::SHGFI_DISPLAYNAME,
+        shellapi::{SHGetFileInfoW, SHFILEINFOW, SHGFI_DISPLAYNAME},
         shlobj::SHGetPathFromIDListW,
     },
 };

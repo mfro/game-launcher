@@ -11,10 +11,11 @@ use std::{
 use flat::prelude::*;
 
 use winapi::um::{
-    errhandlingapi::GetLastError, fileapi::CreateFileW, fileapi::OPEN_EXISTING,
-    ioapiset::DeviceIoControl, winioctl::FSCTL_GET_NTFS_VOLUME_DATA,
-    winioctl::NTFS_VOLUME_DATA_BUFFER, winnt::FILE_SHARE_READ, winnt::FILE_SHARE_WRITE,
-    winnt::GENERIC_READ,
+    errhandlingapi::GetLastError,
+    fileapi::{CreateFileW, OPEN_EXISTING},
+    ioapiset::DeviceIoControl,
+    winioctl::{FSCTL_GET_NTFS_VOLUME_DATA, NTFS_VOLUME_DATA_BUFFER},
+    winnt::{FILE_SHARE_READ, FILE_SHARE_WRITE, GENERIC_READ},
 };
 
 macro_rules! win32_check {

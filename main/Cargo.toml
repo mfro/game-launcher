@@ -9,14 +9,12 @@ debug = true
 
 [dependencies]
 backtrace = "0.3"
-base64 = "0.13.0"
 bitflags = "1.2.1"
 cef = { path = "../../cerium-trifluoride/cef" }
 com = "0.2"
 flat = { path = "../flat" }
 image = "0.23"
 lazy_static = "1.4.0"
-mime_guess = "2.0.3"
 nom = "5.1"
 percent-encoding = "2.1.0"
 quick-xml = { version = "0.19.0", features = ["serialize"] }

@@ -47,6 +47,7 @@
           v-for="(match, i) in state.matches"
           :key="i"
           :match="match"
+          :target="match.target"
           name
         />
       </div>
@@ -112,7 +113,7 @@ export default {
 
     menuStyle() {
       return {
-        'transform': `translateY(${this.selectedIndex * -68}px)`,
+        'transform': `translateY(${this.selectedIndex * -80}px)`,
         'transition': this.sliding ? 'all 200ms ease-out' : '',
       };
     },
@@ -127,7 +128,7 @@ export default {
     inputStyle() {
       if (this.selected && this.$refs.canvas) {
         let context = this.$refs.canvas.getContext('2d');
-        context.font = '500 32px Google Sans'
+        context.font = '500 24px Google Sans'
 
         let fullText = context.measureText(this.selected.key.slice(0, this.selected.end)).width;
         let inputText = context.measureText(this.inputDisplay).width;
@@ -240,7 +241,7 @@ canvas {
   justify-content: center;
 
   > canvas {
-    @include text;
+    @include text-title;
   }
 
   > .window {
@@ -258,13 +259,14 @@ canvas {
     }
 
     > .search-bar {
-      @include text-result;
-      width: 100%;
       z-index: 1;
+      width: 100%;
+      height: 80px;
+      box-sizing: border-box;
+      padding: 12px 0 0 80px;
 
       top: 0;
       left: 0;
-      padding-left: 96px;
 
       position: absolute;
       border-radius: 5px;
@@ -272,13 +274,14 @@ canvas {
       box-shadow: 0 0 10px -5px currentColor;
 
       display: flex;
+      flex-direction: column;
 
       > input {
-        @include text;
+        @include text-title;
 
-        flex: 1 1 0;
-        position: relative;
         z-index: 1;
+        position: relative;
+        white-space: pre;
 
         &.overlay {
           color: transparent;

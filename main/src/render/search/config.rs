@@ -43,6 +43,8 @@ pub fn index(config: &SearchConfig) -> impl Iterator<Item = (IndexEntry, LaunchT
     let index = config.index_manual.iter().map(|src| {
         let keys = src.names.iter();
 
+        let details = src.target[0].clone();
+
         let icon_path = match &src.icon {
             Some(name) => name,
             None => &src.names[0],
@@ -60,6 +62,7 @@ pub fn index(config: &SearchConfig) -> impl Iterator<Item = (IndexEntry, LaunchT
         let index = IndexEntry::new(keys);
 
         let target = LaunchTarget {
+            details,
             display_icon,
             launch,
         };
