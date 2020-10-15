@@ -107,10 +107,6 @@ export default {
           color: #888;
         }
       }
-
-      // .animate {
-      //   transition: color 250ms;
-      // }
     }
 
     > .details {

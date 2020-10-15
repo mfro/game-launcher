@@ -1,9 +1,10 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, time::Instant};
 
 use cef::{
     v8, CefBrowser, CefFrame, CefProcessId, CefProcessMessage, CefV8Context,
     CefV8Propertyattribute, CefV8Value, RenderProcessHandler,
 };
+use search::SearchIndex;
 
 pub mod search;
 
@@ -25,6 +26,18 @@ impl RenderProcessHandler for MyRenderProcessHandler {
         _frame: CefFrame,
         context: CefV8Context,
     ) -> () {
+        let a = Instant::now();
+
+        let search = SearchIndex::new();
+
+        let b = Instant::now();
+        println!("created search index: {:?}", b - a);
+
+        let search = search.into_cef(&context);
+
+        let c = Instant::now();
+        println!("prepared search index: {:?}", c - b);
+
         let root_object = CefV8Value::create_object(None, None).unwrap();
 
         let key = "hook";
@@ -38,9 +51,8 @@ impl RenderProcessHandler for MyRenderProcessHandler {
         root_object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
 
         let key = "search";
-        let search = search::Search::new(&context);
-        let search = move |query| search.search(query);
-        let value = v8::v8_function1(key.clone(), search);
+        let search_fn = move |query: String| search.search_cef(&query);
+        let value = v8::v8_function1(key.clone(), search_fn);
         root_object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
 
         let globals = context.get_global().unwrap();

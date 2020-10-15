@@ -1,13 +1,13 @@
 use std::{fs::File, io::prelude::*, process::Command};
 
-use super::{IndexEntry, LaunchTarget};
+use super::Index;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SearchConfig {
     pub index_steam: Option<String>,
     pub index_appx: bool,
     pub index_start_menu: bool,
-    pub index_manual: Vec<ConfigIndexEntry>,
+    pub index_manual: Vec<ManualTarget>,
 }
 
 impl Default for SearchConfig {
@@ -21,56 +21,58 @@ impl Default for SearchConfig {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ConfigIndexEntry {
+impl SearchConfig {
+    pub fn load() -> SearchConfig {
+        let raw: SearchConfig = crate::nonfatal(|| {
+            let mut content = vec![];
+            File::open("config.yaml")?.read_to_end(&mut content)?;
+            Ok(serde_yaml::from_slice(&content)?)
+        })
+        .unwrap_or_default();
+
+        raw
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Hash)]
+pub struct ManualTarget {
     names: Vec<String>,
     target: Vec<String>,
     icon: Option<String>,
 }
 
-pub fn load() -> SearchConfig {
-    let raw: SearchConfig = crate::nonfatal(|| {
-        let mut content = vec![];
-        File::open("config.yaml")?.read_to_end(&mut content)?;
-        Ok(serde_yaml::from_slice(&content)?)
-    })
-    .unwrap_or_default();
-
-    raw
+impl SearchConfig {
+    pub fn index(&self) -> Vec<ManualTarget> {
+        self.index_manual.clone()
+    }
 }
 
-pub fn index(config: &SearchConfig) -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
-    let index = config.index_manual.iter().map(|src| {
-        let keys = src.names.iter();
+impl Index<ManualTarget> for SearchConfig {
+    fn keys(&self, entry: &ManualTarget) -> Vec<String> {
+        entry.names.clone()
+    }
 
-        let details = src.target[0].clone();
+    fn launch(&self, entry: &ManualTarget) -> Box<dyn Fn()> {
+        let target = entry.target.clone();
 
-        let icon_path = match &src.icon {
-            Some(name) => name,
-            None => &src.names[0],
-        };
-        let display_icon = crate::nonfatal(|| Ok(image::open(icon_path)?));
-
-        let target = src.target.clone();
-        let launch = Box::new(move || {
+        Box::new(move || {
             Command::new(&target[0])
-                .args(target[1..].iter()) //
+                .args(target[1..].iter())
                 .spawn()
                 .expect("spawn process");
-        });
+        })
+    }
 
-        let index = IndexEntry::new(keys);
+    fn details(&self, entry: &ManualTarget) -> String {
+        entry.target[0].clone()
+    }
 
-        let target = LaunchTarget {
-            details,
-            display_icon,
-            launch,
+    fn display_icon(&self, entry: &ManualTarget) -> Option<image::DynamicImage> {
+        let icon_path = match &entry.icon {
+            Some(name) => name,
+            None => &entry.names[0],
         };
 
-        (index, target)
-    });
-
-    let index: Vec<_> = index.collect();
-
-    index.into_iter()
+        crate::nonfatal(|| Ok(image::open(icon_path)?))
+    }
 }

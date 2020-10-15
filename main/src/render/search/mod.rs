@@ -1,29 +1,39 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, fs::File, io::BufReader, path::Path};
 
 use cef::{v8, CefV8Context, CefV8Propertyattribute, CefV8Value};
-use image::{imageops::FilterType, png::PngEncoder, ColorType, DynamicImage};
+use image::{imageops::FilterType, DynamicImage, ImageOutputFormat};
+use serde::{de::DeserializeOwned, Serialize};
 
 mod assets;
 
-pub mod appx;
 mod config;
+use config::SearchConfig;
+
+mod appx;
+use appx::AppxIndex;
+
 mod start_menu;
+use start_menu::StartMenuIndex;
+
 mod steam;
+use steam::SteamIndex;
 
 pub type MatchScore = [usize; 2];
 
+pub trait Index<K> {
+    fn keys(&self, entry: &K) -> Vec<String>;
+    fn launch(&self, entry: &K) -> Box<dyn Fn()>;
+    fn details(&self, entry: &K) -> String;
+    fn display_icon(&self, entry: &K) -> Option<DynamicImage>;
+}
+
 /// Contains information required to find a value in the index.
 /// That means a list of strings
-pub struct IndexEntry {
+pub struct Key {
     keys: Vec<String>,
 }
 
-impl IndexEntry {
-    pub fn new<A: AsRef<str>, I: Iterator<Item = A>>(keys: I) -> IndexEntry {
-        let keys = keys.map(|x| x.as_ref().to_owned()).collect();
-        IndexEntry { keys }
-    }
-
+impl Key {
     pub fn do_match(&self, query: &str) -> Option<(&str, usize, MatchScore)> {
         for key in &self.keys {
             let lower = key.to_lowercase();
@@ -48,92 +58,166 @@ impl IndexEntry {
 
 /// Contains information about a value in the index.
 /// That means a display name & icon for rendering, and a function to launch the target
-pub struct LaunchTarget {
+pub struct Target {
     details: String,
     display_icon: Option<DynamicImage>,
     launch: Box<dyn Fn()>,
 }
 
-pub struct Search {
-    index: Vec<(IndexEntry, CefV8Value)>,
+impl Target {
+    pub fn from_index<K, Idx: Index<K>>(index: &Idx, key: &K) -> Target {
+        let details = index.details(key);
+        let display_icon = index.display_icon(key);
+        let launch = index.launch(key);
+
+        let display_icon = display_icon.map(|icon| {
+            let icon = icon.to_rgba();
+
+            let filter = if icon.dimensions().0 <= 32 {
+                // println!("{}: {}", index.keys(key)[0], icon.dimensions().0);
+                FilterType::Nearest
+            } else {
+                // if icon.dimensions().0 < 64 {
+                //     println!("{}: {}", index.keys(key)[0], icon.dimensions().0)
+                // }
+
+                FilterType::CatmullRom
+            };
+
+            let scaled = image::imageops::resize(&icon, 64, 64, filter);
+
+            let mut out = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
+            image::imageops::overlay(&mut out, &scaled, 0, 0);
+
+            DynamicImage::ImageRgba8(out)
+        });
+
+        Target {
+            details,
+            display_icon,
+            launch,
+        }
+    }
+
+    pub fn to_cef(self, ctx: &CefV8Context) -> CefV8Value {
+        let object = CefV8Value::create_object(None, None).unwrap();
+
+        let key = "details";
+        let value = &self.details;
+        object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
+
+        let key = "display_icon";
+        let value: CefV8Value = match self.display_icon {
+            None => ().into(),
+            Some(image) => {
+                let mut data = vec![];
+                image.write_to(&mut data, ImageOutputFormat::Png).unwrap();
+                assets::create_asset(ctx, "image/png", &mut data)
+            }
+        };
+        object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
+
+        let key = "launch";
+        let launch = self.launch;
+        let value = v8::v8_function0(key, move || launch());
+        object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
+
+        object
+    }
 }
 
-struct Match<'a> {
+pub struct SearchIndex<T = Target> {
+    entries: Vec<(Key, T)>,
+}
+
+pub struct Match<'a, T> {
     key: &'a str,
     index: usize,
     score: MatchScore,
-    object: &'a CefV8Value,
+    object: &'a T,
 }
 
-struct ReleaseCallback;
-impl cef::V8ArrayBufferReleaseCallback for ReleaseCallback {
-    fn release_buffer(&mut self, buffer: &mut std::ffi::c_void) {
-        println!("{:?}", buffer as *mut _);
-    }
-}
+impl SearchIndex {
+    pub fn new() -> SearchIndex {
+        let mut idx = SearchIndex { entries: vec![] };
 
-impl Search {
-    pub fn new(ctx: &CefV8Context) -> Search {
-        let start = std::time::Instant::now();
+        let config = SearchConfig::load();
+        idx.include(&config, &config.index());
 
-        let mut index = vec![];
-
-        for (entry, info) in build_index() {
-            let object = CefV8Value::create_object(None, None).unwrap();
-
-            let key = "details";
-            let value = &info.details;
-            object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
-
-            let key = "display_icon";
-            let value: CefV8Value = match info.display_icon {
-                None => ().into(),
-                Some(image) => {
-                    let image = image.to_rgba();
-
-                    let scaled = if image.dimensions().0 <= 32 {
-                        println!("{}: {}", entry.keys[0], image.dimensions().0);
-                        image::imageops::resize(&image, 64, 64, FilterType::Nearest)
-                    } else {
-                        if image.dimensions().0 < 64 {
-                            println!("{}: {}", entry.keys[0], image.dimensions().0)
-                        }
-
-                        image::imageops::resize(&image, 64, 64, FilterType::CatmullRom)
-                    };
-
-                    let mut out = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
-                    image::imageops::overlay(&mut out, &scaled, 0, 0);
-
-                    let mut data = vec![];
-                    PngEncoder::new(&mut data)
-                        .encode(out.as_raw(), out.width(), out.height(), ColorType::Rgba8)
-                        .unwrap();
-
-                    assets::create_asset(ctx, "image/png", &mut data)
-                }
-            };
-            object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
-
-            let key = "launch";
-            let launch = info.launch;
-            let value = v8::v8_function0(key, move || launch());
-            object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
-
-            index.push((entry, object));
+        if config.index_appx {
+            let appx = AppxIndex::new();
+            idx.include(&appx, &appx.index());
         }
 
-        let end = std::time::Instant::now();
-        println!("index built: {:?}", end - start);
+        if config.index_start_menu {
+            let start_menu = StartMenuIndex::new();
+            idx.include(&start_menu, &start_menu.index());
+        }
 
-        Search { index }
+        if let Some(root) = &config.index_steam {
+            let steam = SteamIndex::new(root);
+            idx.include(&steam, &steam.index());
+        }
+
+        idx
     }
 
-    pub fn search(&self, query: String) -> CefV8Value {
+    pub fn include_with_cache<K, Idx>(&mut self, key: &str, index: &Idx)
+    where
+        K: Serialize + DeserializeOwned + Eq,
+        Idx: Index<K>,
+    {
+        crate::nonfatal(|| {
+            let path = Path::new("index").join(key).with_extension("json");
+            let file = BufReader::new(File::open(path)?);
+            let parsed: Vec<K> = serde_json::from_reader(file)?;
+
+            for entry in &parsed {
+                let keys = index.keys(entry);
+
+                let key = Key { keys };
+                let target = Target::from_index(index, entry);
+
+                self.entries.push((key, target));
+            }
+
+            Ok(())
+        });
+    }
+
+    pub fn include<'a, K, Idx, Iter>(&mut self, index: &Idx, entries: Iter)
+    where
+        K: 'a,
+        Idx: Index<K>,
+        Iter: IntoIterator<Item = &'a K>,
+    {
+        for entry in entries {
+            let keys = index.keys(entry);
+
+            let key = Key { keys };
+            let target = Target::from_index(index, entry);
+
+            self.entries.push((key, target));
+        }
+    }
+
+    pub fn into_cef(self, ctx: &CefV8Context) -> SearchIndex<CefV8Value> {
+        let entries = self
+            .entries
+            .into_iter()
+            .map(|(entry, target)| (entry, target.to_cef(ctx)))
+            .collect();
+
+        SearchIndex { entries }
+    }
+}
+
+impl<T> SearchIndex<T> {
+    pub fn search(&self, query: &str) -> Vec<Match<T>> {
         let query = query.to_lowercase();
 
         let mut matches: Vec<_> = self
-            .index
+            .entries
             .iter()
             .filter_map(|(entry, object)| {
                 entry.do_match(&query).map(|(key, index, score)| Match {
@@ -151,18 +235,21 @@ impl Search {
                 o => return o,
             };
 
-            // match Ord::cmp(&a.key.len(), &b.key.len()) {
-            //     Ordering::Equal => {}
-            //     o => return o,
-            // }
-
             Ord::cmp(a.key, b.key)
         });
 
-        let limit = 7.min(matches.len());
-        let display = &matches[0..limit];
+        matches
+    }
+}
 
-        v8::v8_array(display.iter().map(|m| {
+impl SearchIndex<CefV8Value> {
+    pub fn search_cef(&self, query: &str) -> CefV8Value {
+        let matches = self.search(query);
+
+        let limit = 7.min(matches.len());
+        let display = matches.into_iter().take(limit);
+
+        v8::v8_array(display.map(|m| {
             let object = CefV8Value::create_object(None, None).unwrap();
 
             let key = "key";
@@ -184,24 +271,4 @@ impl Search {
             object
         }))
     }
-}
-
-fn build_index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
-    let config = config::load();
-
-    let mut index: Vec<_> = config::index(&config).collect();
-
-    if config.index_appx {
-        index.extend(appx::index());
-    }
-
-    if config.index_start_menu {
-        index.extend(start_menu::index());
-    }
-
-    if let Some(steam_dir) = config.index_steam {
-        index.extend(steam::index(&steam_dir));
-    }
-
-    index.into_iter()
 }

@@ -105,7 +105,7 @@ fn log_path() -> std::io::Result<PathBuf> {
     Ok(log_dir.join("error.log"))
 }
 
-pub fn nonfatal<T, F>(f: F) -> Option<T>
+pub(crate) fn nonfatal<T, F>(f: F) -> Option<T>
 where
     F: FnOnce() -> Result<T, MyError>,
 {
@@ -132,45 +132,13 @@ where
     }
 }
 
-pub struct MyError {
+pub(crate) struct MyError {
     inner: Box<dyn std::fmt::Debug>,
     trace: Backtrace,
 }
 
-impl From<Error> for MyError {
-    fn from(src: Error) -> Self {
-        let inner = Box::new(src);
-        let trace = Backtrace::new();
-        MyError { inner, trace }
-    }
-}
-
-impl From<winrt::Error> for MyError {
-    fn from(src: winrt::Error) -> Self {
-        let inner = Box::new(src);
-        let trace = Backtrace::new();
-        MyError { inner, trace }
-    }
-}
-
-impl From<serde_yaml::Error> for MyError {
-    fn from(src: serde_yaml::Error) -> Self {
-        let inner = Box::new(src);
-        let trace = Backtrace::new();
-        MyError { inner, trace }
-    }
-}
-
-impl From<quick_xml::DeError> for MyError {
-    fn from(src: quick_xml::DeError) -> Self {
-        let inner = Box::new(src);
-        let trace = Backtrace::new();
-        MyError { inner, trace }
-    }
-}
-
-impl From<image::ImageError> for MyError {
-    fn from(src: image::ImageError) -> Self {
+impl<T: 'static + std::fmt::Debug> From<T> for MyError {
+    fn from(src: T) -> Self {
         let inner = Box::new(src);
         let trace = Backtrace::new();
         MyError { inner, trace }

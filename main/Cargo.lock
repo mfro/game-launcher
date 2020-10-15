@@ -456,6 +456,7 @@ dependencies = [
  "quick-xml",
  "serde",
  "serde_derive",
+ "serde_json",
  "serde_yaml",
  "winapi",
  "winrt",

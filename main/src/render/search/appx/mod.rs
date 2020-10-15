@@ -16,7 +16,7 @@ use winapi::{
     um::winuser::GetWindowThreadProcessId, um::winuser::GW_OWNER,
 };
 
-use super::{IndexEntry, LaunchTarget};
+use super::Index;
 use crate::{
     bindings::windows::management::deployment::PackageManager,
     common::{Dll, ToWide},
@@ -354,184 +354,202 @@ pub fn luminance(i: &[f64; 3]) -> f64 {
     r * 0.2129 + g * 0.7152 + b * 0.0722
 }
 
-pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
-    let pm = PackageManager::new().unwrap();
+pub struct AppxIndex {
+    pm: PackageManager,
+}
 
-    let raw = list_start_apps();
-    let packages = std::str::from_utf8(&raw)
-        .unwrap()
-        .split('\n')
-        .map(|line| line.trim())
-        .filter(|line| line.len() > 0)
-        .map(|line| split_row(line))
-        .map(|mut i| (i.next().unwrap(), i.next().unwrap()))
-        .filter_map(|(app_name, launch_id)| {
-            // launch_id has the form "family_name!application_id"
-            let i = launch_id.find('!')?;
-            let family_name = &launch_id[..i];
-            let app_id = &launch_id[i + 1..];
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Hash)]
+pub struct AppxTarget {
+    name: String,
+    // launch_id has the form "family_name!application_id"
+    launch_id: String,
+}
 
-            let packages: Vec<_> = crate::nonfatal(|| {
-                let packages =
-                    pm.find_packages_by_user_security_id_package_family_name("", family_name)?;
-                Ok(packages.into_iter().collect())
+impl AppxIndex {
+    pub fn new() -> AppxIndex {
+        let pm = PackageManager::new().unwrap();
+        AppxIndex { pm }
+    }
+
+    pub fn index(&self) -> Vec<AppxTarget> {
+        let raw = list_start_apps();
+        std::str::from_utf8(&raw)
+            .unwrap()
+            .split('\n')
+            .map(|line| line.trim())
+            .filter(|line| line.len() > 0)
+            .map(|line| split_row(line))
+            // .map(|mut i| (i.next().unwrap(), i.next().unwrap()))
+            .map(|mut iter| AppxTarget {
+                name: iter.next().unwrap().to_owned(),
+                launch_id: iter.next().unwrap().to_owned(),
+            })
+            .filter(|target| target.launch_id.contains('!'))
+            .collect()
+    }
+}
+
+impl Index<AppxTarget> for AppxIndex {
+    fn keys(&self, entry: &AppxTarget) -> Vec<String> {
+        vec![entry.name.clone()]
+    }
+
+    fn launch(&self, entry: &AppxTarget) -> Box<dyn Fn()> {
+        let launch_id = entry.launch_id.clone();
+
+        Box::new(move || {
+            const CLSID: GUID = GUID {
+                data1: 0x45BA127D,
+                data2: 0x10A8,
+                data3: 0x46EA,
+                data4: [0x8A, 0xB7, 0x56, 0xEA, 0x90, 0x78, 0x94, 0x3C],
+            };
+
+            let raw = launch_id.to_wide();
+
+            unsafe {
+                std::thread::spawn(move || {
+                    let am = create_instance::<dyn IApplicationActivationManager>(&CLSID).unwrap();
+
+                    let mut process_id = 0;
+                    am.activate_application(raw.as_ptr(), std::ptr::null(), 0, &mut process_id);
+
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+
+                    EnumWindows(Some(enum_windows_helper), process_id as isize);
+                });
+            }
+
+            unsafe extern "system" fn enum_windows_helper(win: HWND, l: LPARAM) -> i32 {
+                let original = l as u32;
+
+                let mut process_id = 0;
+                GetWindowThreadProcessId(win, &mut process_id);
+
+                if original == process_id {
+                    let parent = GetWindow(win, GW_OWNER);
+                    if parent.is_null() {
+                        crate::common::focus_window(win);
+                        return 0;
+                    }
+
+                    let mut parent_process_id = 0;
+                    GetWindowThreadProcessId(parent, &mut parent_process_id);
+                    if parent_process_id != process_id {
+                        crate::common::focus_window(parent);
+                        return 0;
+                    }
+                }
+
+                1
+            }
+        })
+    }
+
+    fn details(&self, entry: &AppxTarget) -> String {
+        entry.launch_id.clone()
+    }
+
+    fn display_icon(&self, entry: &AppxTarget) -> Option<DynamicImage> {
+        let i = entry.launch_id.find('!')?;
+        let family_name = &entry.launch_id[..i];
+        let app_id = &entry.launch_id[i + 1..];
+
+        let packages: Vec<_> = crate::nonfatal(|| {
+            let packages = self
+                .pm
+                .find_packages_by_user_security_id_package_family_name("", family_name)?;
+            Ok(packages.into_iter().collect())
+        })?;
+
+        assert!(packages.len() == 1);
+
+        let install_path = crate::nonfatal(|| {
+            let path = packages[0].installed_location()?.path()?.to_string();
+            Ok(path)
+        })?;
+
+        let path = Path::new(&install_path);
+
+        let manifest: Package = crate::nonfatal(|| {
+            let mut manifest = vec![];
+            let manifest_path = path.join("AppxManifest.xml");
+            File::open(manifest_path)?.read_to_end(&mut manifest)?;
+            let package = quick_xml::de::from_reader(&manifest as &[u8])?;
+            Ok(package)
+        })?;
+
+        let app = manifest
+            .applications
+            .applications
+            .iter()
+            .find(|a| a.id == app_id)?;
+
+        let pris: Vec<_> = ["resources.pri", "pris/resources.en-US.pri"]
+            .iter()
+            .filter_map(|relative| {
+                let path = path.join(relative);
+                match path.exists() {
+                    true => Some(load_pri(path)),
+                    false => None,
+                }
+            })
+            .collect();
+
+        let logo_asset = &app.visual_elements.square_44x44_logo;
+        let logo_path = path.join(logo_asset);
+        let logo_path = if logo_path.exists() {
+            logo_path
+        } else {
+            let uri_tail = logo_asset.replace('\\', "/");
+            let found = find_resource(&pris, &uri_tail, false)?;
+            let logo_path = path.join(found);
+
+            let valid = crate::nonfatal(|| {
+                let src = image::open(&logo_path)?;
+                let src = src.resize(64, 64, FilterType::CatmullRom);
+
+                let mut full = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
+                image::imageops::overlay(&mut full, &src, 0, 0);
+
+                let mut sum = [0.0; 3];
+                let mut total_alpha = 0.0;
+                for (_, _, pixel) in full.enumerate_pixels() {
+                    sum[0] += pixel[0] as f64 * pixel[3] as f64;
+                    sum[1] += pixel[1] as f64 * pixel[3] as f64;
+                    sum[2] += pixel[2] as f64 * pixel[3] as f64;
+                    total_alpha += pixel[3] as f64;
+                }
+                sum[0] /= total_alpha * 255.0;
+                sum[1] /= total_alpha * 255.0;
+                sum[2] /= total_alpha * 255.0;
+
+                let image = luminance(&sum);
+                let white = luminance(&[0.0; 3]);
+                let ratio = (image + 0.05) / (white + 0.05);
+
+                Ok(ratio < 15.0)
             })?;
 
-            assert!(packages.len() == 1);
-
-            let path = crate::nonfatal(|| {
-                let path = packages[0].installed_location()?.path()?.to_string();
-                Ok(path)
-            })?;
-
-            let path = Path::new(&path);
-
-            let manifest: Package = crate::nonfatal(|| {
-                let mut manifest = vec![];
-                let manifest_path = path.join("AppxManifest.xml");
-                File::open(manifest_path)?.read_to_end(&mut manifest)?;
-                let package = quick_xml::de::from_reader(&manifest as &[u8])?;
-                Ok(package)
-            })?;
-
-            let app = manifest
-                .applications
-                .applications
-                .iter()
-                .find(|a| a.id == app_id)?;
-
-            let pris: Vec<_> = ["resources.pri", "pris/resources.en-US.pri"]
-                .iter()
-                .filter_map(|relative| {
-                    let path = path.join(relative);
-                    match path.exists() {
-                        true => Some(load_pri(path)),
-                        false => None,
-                    }
-                })
-                .collect();
-
-            let logo_asset = &app.visual_elements.square_44x44_logo;
-            let logo_path = path.join(logo_asset);
-            let logo_path = if logo_path.exists() {
-                logo_path
-            } else {
-                let uri_tail = logo_asset.replace('\\', "/");
-                let found = find_resource(&pris, &uri_tail, false)?;
-                let logo_path = path.join(found);
-
-                let valid = crate::nonfatal(|| {
-                    let src = image::open(&logo_path)?;
-                    let src = src.resize(64, 64, FilterType::CatmullRom);
-
-                    let mut full = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
-                    image::imageops::overlay(&mut full, &src, 0, 0);
-
-                    let mut sum = [0.0; 3];
-                    let mut total_alpha = 0.0;
-                    for (_, _, pixel) in full.enumerate_pixels() {
-                        sum[0] += pixel[0] as f64 * pixel[3] as f64;
-                        sum[1] += pixel[1] as f64 * pixel[3] as f64;
-                        sum[2] += pixel[2] as f64 * pixel[3] as f64;
-                        total_alpha += pixel[3] as f64;
-                    }
-                    sum[0] /= total_alpha * 255.0;
-                    sum[1] /= total_alpha * 255.0;
-                    sum[2] /= total_alpha * 255.0;
-
-                    let image = luminance(&sum);
-                    let white = luminance(&[0.0; 3]);
-                    let ratio = (image + 0.05) / (white + 0.05);
-
-                    Ok(ratio < 15.0)
-                })?;
-
-                if !valid {
-                    if let Some(white) = find_resource(&pris, &uri_tail, true) {
-                        path.join(white)
-                    } else {
-                        logo_path
-                    }
+            if !valid {
+                if let Some(white) = find_resource(&pris, &uri_tail, true) {
+                    path.join(white)
                 } else {
                     logo_path
                 }
-            };
+            } else {
+                logo_path
+            }
+        };
 
-            let keys = [app_name];
+        crate::nonfatal(|| {
+            let src = image::open(logo_path)?;
+            let src = src.resize(64, 64, FilterType::CatmullRom);
 
-            let details = family_name.to_string();
+            let mut out = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
+            image::imageops::overlay(&mut out, &src, 0, 0);
 
-            let display_icon = crate::nonfatal(|| {
-                let src = image::open(logo_path)?;
-                let src = src.resize(64, 64, FilterType::CatmullRom);
-
-                let mut out = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
-                image::imageops::overlay(&mut out, &src, 0, 0);
-
-                Ok(DynamicImage::ImageRgba8(out))
-            });
-
-            let index = IndexEntry::new(keys.iter());
-
-            let launch_id = launch_id.to_owned();
-            let launch = Box::new(move || {
-                const CLSID: GUID = GUID {
-                    data1: 0x45BA127D,
-                    data2: 0x10A8,
-                    data3: 0x46EA,
-                    data4: [0x8A, 0xB7, 0x56, 0xEA, 0x90, 0x78, 0x94, 0x3C],
-                };
-
-                let raw = launch_id.to_wide();
-
-                unsafe {
-                    std::thread::spawn(move || {
-                        let am =
-                            create_instance::<dyn IApplicationActivationManager>(&CLSID).unwrap();
-
-                        let mut process_id = 0;
-                        am.activate_application(raw.as_ptr(), std::ptr::null(), 0, &mut process_id);
-
-                        std::thread::sleep(std::time::Duration::from_millis(200));
-
-                        EnumWindows(Some(enum_windows_helper), process_id as isize);
-                    });
-                }
-
-                unsafe extern "system" fn enum_windows_helper(win: HWND, l: LPARAM) -> i32 {
-                    let original = l as u32;
-
-                    let mut process_id = 0;
-                    GetWindowThreadProcessId(win, &mut process_id);
-
-                    if original == process_id {
-                        let parent = GetWindow(win, GW_OWNER);
-                        if parent.is_null() {
-                            crate::common::focus_window(win);
-                            return 0;
-                        }
-
-                        let mut parent_process_id = 0;
-                        GetWindowThreadProcessId(parent, &mut parent_process_id);
-                        if parent_process_id != process_id {
-                            crate::common::focus_window(parent);
-                            return 0;
-                        }
-                    }
-
-                    1
-                }
-            });
-
-            let target = LaunchTarget {
-                details,
-                display_icon,
-                launch,
-            };
-
-            Some((index, target))
-        });
-
-    let packages: Vec<_> = packages.collect();
-    packages.into_iter()
+            Ok(DynamicImage::ImageRgba8(out))
+        })
+    }
 }

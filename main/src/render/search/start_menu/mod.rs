@@ -8,145 +8,164 @@ use lnk::ShellLink;
 
 use crate::common::{RecursiveSearch, ToWide};
 
-use super::{IndexEntry, LaunchTarget};
+use super::Index;
 
-pub fn index() -> impl Iterator<Item = (IndexEntry, LaunchTarget)> {
-    let appdata = std::env::var("APPDATA").unwrap();
-    let roots = [
-        PathBuf::from(r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs"),
-        PathBuf::from(appdata).join(r"Microsoft\Windows\Start Menu\Programs"),
-    ];
+pub struct StartMenuIndex {}
 
-    let vec: Vec<_> = roots
-        .iter()
-        .map(|root| {
-            let iter = RecursiveSearch::new(&root).into_iter();
-            iter.map(move |entry| {
-                let relative = entry.path().strip_prefix(&root).unwrap().to_owned();
-                (entry, relative)
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Hash)]
+pub struct StartMenuTarget {
+    name: String,
+    relative: String,
+    lnk_path: PathBuf,
+}
+
+impl StartMenuIndex {
+    pub fn new() -> StartMenuIndex {
+        StartMenuIndex {}
+    }
+
+    pub fn index(&self) -> Vec<StartMenuTarget> {
+        let appdata = std::env::var("APPDATA").unwrap();
+        let roots = [
+            PathBuf::from(r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs"),
+            PathBuf::from(appdata).join(r"Microsoft\Windows\Start Menu\Programs"),
+        ];
+
+        let vec: Vec<_> = roots
+            .iter()
+            .map(|root| {
+                let iter = RecursiveSearch::new(&root).into_iter();
+                iter.map(move |entry| {
+                    let relative = entry.path().strip_prefix(&root).unwrap().to_owned();
+                    (entry, relative)
+                })
             })
-        })
-        .flatten()
-        // select only .lnk files
-        .filter_map(|(entry, relative)| {
-            let path = entry.path();
-            match path.extension() {
-                None => None,
-                Some(ext) => match ext.to_str() {
-                    Some("lnk") => Some(path),
-                    Some("ini") | Some("url") => None,
-                    _ => {
-                        println!("unknown start menu entry: {:?}", relative);
-                        None
+            .flatten()
+            // select only .lnk files
+            .filter_map(|(entry, relative)| {
+                let path = entry.path();
+                match path.extension() {
+                    None => None,
+                    Some(ext) => match ext.to_str() {
+                        Some("lnk") => Some((path, relative)),
+                        Some("ini") | Some("url") => None,
+                        _ => {
+                            println!("unknown start menu entry: {:?}", relative);
+                            None
+                        }
+                    },
+                }
+            })
+            // open and parse the .lnk files
+            .filter_map(|(path, relative)| {
+                let lnk = crate::nonfatal(|| {
+                    let mut raw = vec![];
+                    File::open(&path)?.read_to_end(&mut raw)?;
+                    Ok(ShellLink::load(&raw))
+                })?;
+
+                let target = lnk::resolve(&lnk)?;
+                Some((path, relative, target))
+            })
+            // select only .lnk files that point to 'exe', 'msc', 'url' files
+            .filter(|(path, _, target)| match target.rfind('.') {
+                None => panic!(),
+                Some(i) => match &target[i + 1..] {
+                    "exe" | "msc" => true,
+                    "url" | "chm" | "txt" | "rtf" | "pdf" | "html" | "ini" => false,
+                    other => {
+                        println!("Unknown lnk target extension: {} {:?}", other, path);
+                        false
                     }
                 },
+            })
+            // get display names and add to the tuple
+            .map(|(path, relative, target)| {
+                let name = lnk::get_display_name(&path);
+                (path, relative, target, name)
+            })
+            .collect();
+
+        // declare new variable for deduplication
+        vec.iter()
+            // deduplicate .lnk files that are in the same relative path within the start menu
+            .filter(|(path1, relative, _, name1)| {
+                let (path2, _, _, name2) = vec
+                    .iter()
+                    .rfind(|(_, relative2, _, _)| relative2 == relative)
+                    .unwrap();
+
+                // if path == path2, then its the same lnk
+                // if don't have the same name, then they are distinct
+                path1 == path2 || name1 != name2
+            })
+            // construct index entries
+            .map(|(path, relative, _, name)| StartMenuTarget {
+                name: name.clone(),
+                relative: relative.to_str().unwrap().to_owned(),
+                lnk_path: path.clone(),
+            })
+            .collect()
+    }
+}
+
+impl Index<StartMenuTarget> for StartMenuIndex {
+    fn keys(&self, entry: &StartMenuTarget) -> Vec<String> {
+        vec![
+            entry
+                .lnk_path
+                .file_stem()
+                .and_then(|os| os.to_str())
+                .unwrap()
+                .to_owned(),
+            entry.name.clone(),
+        ]
+    }
+
+    fn launch(&self, entry: &StartMenuTarget) -> Box<dyn Fn()> {
+        let lnk_path = entry.lnk_path.clone();
+
+        Box::new(move || {
+            let op = "open".to_wide();
+            let raw = lnk_path.to_wide();
+
+            unsafe {
+                ShellExecuteW(
+                    std::ptr::null_mut(),
+                    op.as_ptr(),
+                    raw.as_ptr(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    1,
+                );
             }
         })
-        // open and parse the .lnk files
-        .filter_map(|path| {
-            let lnk = crate::nonfatal(|| {
-                let mut raw = vec![];
-                File::open(&path)?.read_to_end(&mut raw)?;
-                Ok(ShellLink::load(&raw))
-            })?;
+    }
 
-            let target = lnk::resolve(&lnk)?;
-            Some((path, target))
-        })
-        // select only .lnk files that point to 'exe', 'msc', 'url' files
-        .filter(|(path, target)| match target.rfind('.') {
-            None => panic!(),
-            Some(i) => match &target[i + 1..] {
-                "exe" | "msc" => true,
-                "url" | "chm" | "txt" | "rtf" | "pdf" | "html" | "ini" => false,
-                other => {
-                    println!("Unknown lnk target extension: {} {:?}", other, path);
-                    false
+    fn details(&self, entry: &StartMenuTarget) -> String {
+        entry.relative.clone()
+    }
+
+    fn display_icon(&self, entry: &StartMenuTarget) -> Option<image::DynamicImage> {
+        crate::nonfatal(|| {
+            let mut raw = vec![];
+            File::open(&entry.lnk_path)?.read_to_end(&mut raw)?;
+            let lnk = ShellLink::load(&raw);
+
+            let data = match lnk::extract_ico(&lnk) {
+                Some(data) => data,
+                None => {
+                    return Err(Error::new(
+                        ErrorKind::NotFound,
+                        format!("unable to extract icon for lnk {:?}", entry.lnk_path),
+                    ))?
                 }
-            },
-        })
-        // get display names and add to the tuple
-        .map(|(path, target)| {
-            let name = lnk::get_display_name(&path);
-            (path, target, name)
-        })
-        .collect();
-
-    // declare new variable for deduplication
-    let vec: Vec<_> = vec
-        .iter()
-        // deduplicate .lnk files that point to the same target and have the same name
-        .filter(|(path1, target1, name1)| {
-            let (path2, _, name2) = vec
-                .iter()
-                .rfind(|(_, target2, _)| target2 == target1)
-                .unwrap();
-
-            // if path == path2, then its the same lnk
-            // if don't have the same name, then they are distinct
-            path1 == path2 || name1 != name2
-        })
-        // construct index entries
-        .map(|(path, _, name)| {
-            let keys = vec![
-                path.file_stem()
-                    .and_then(|os| os.to_str())
-                    .unwrap()
-                    .to_owned(),
-                name.clone(),
-            ];
-
-            let details = path.to_str().unwrap().to_string();
-
-            let display_icon = crate::nonfatal(|| {
-                let mut raw = vec![];
-                File::open(&path)?.read_to_end(&mut raw)?;
-                let lnk = ShellLink::load(&raw);
-
-                let data = match lnk::extract_ico(&lnk) {
-                    Some(data) => data,
-                    None => {
-                        return Err(Error::new(
-                            ErrorKind::NotFound,
-                            format!("unable to extract icon for lnk {:?}", path),
-                        ))?
-                    }
-                };
-
-                Ok(image::load_from_memory_with_format(
-                    &data,
-                    ImageFormat::Ico,
-                )?)
-            });
-
-            let path = path.clone();
-            let launch = Box::new(move || {
-                let op = "open".to_wide();
-                let raw = path.to_wide();
-
-                unsafe {
-                    ShellExecuteW(
-                        std::ptr::null_mut(),
-                        op.as_ptr(),
-                        raw.as_ptr(),
-                        std::ptr::null(),
-                        std::ptr::null(),
-                        1,
-                    );
-                }
-            });
-
-            let index = IndexEntry::new(keys.into_iter());
-
-            let target = LaunchTarget {
-                details,
-                display_icon,
-                launch,
             };
 
-            (index, target)
+            Ok(image::load_from_memory_with_format(
+                &data,
+                ImageFormat::Ico,
+            )?)
         })
-        .collect();
-
-    vec.into_iter()
+    }
 }
