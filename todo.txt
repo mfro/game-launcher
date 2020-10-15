@@ -1,12 +1,16 @@
-Current index:
+Current search providers:
     - manual configuration
     - start menu lnk files
     - Windows 10 Apps >:( this was so stupidly hard to do
+    - Steam library
+
+Current ordering system:
+    - offset within word, increasing
+    - offset of word, increasing
+    - launch count, decreasing
 
 Indexing ideas:
     - NTFS MFT scan
-    - Steam library
 
 ranking ideas:
-    - launch count
     - launch date

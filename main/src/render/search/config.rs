@@ -23,11 +23,14 @@ impl Default for SearchConfig {
 
 impl SearchConfig {
     pub fn load() -> SearchConfig {
-        let raw: SearchConfig = crate::nonfatal(|| {
-            let mut content = vec![];
-            File::open("config.yaml")?.read_to_end(&mut content)?;
-            Ok(serde_yaml::from_slice(&content)?)
-        })
+        let raw: SearchConfig = crate::attempt(
+            || format!("load config"),
+            || {
+                let mut content = vec![];
+                File::open("config.yaml")?.read_to_end(&mut content)?;
+                Ok(serde_yaml::from_slice(&content)?)
+            },
+        )
         .unwrap_or_default();
 
         raw
@@ -73,6 +76,9 @@ impl SearchProvider<ManualTarget> for SearchConfig {
             None => &entry.names[0],
         };
 
-        crate::nonfatal(|| Ok(image::open(icon_path)?))
+        crate::attempt(
+            || format!("open manual icon {}", icon_path),
+            || Ok(image::open(icon_path)?),
+        )
     }
 }

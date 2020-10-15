@@ -129,14 +129,15 @@ macro_rules! log {
     };
 }
 
-pub(crate) fn nonfatal<T, F>(f: F) -> Option<T>
+pub(crate) fn attempt<T, F, F2>(describe: F2, f: F) -> Option<T>
 where
     F: FnOnce() -> Result<T, MyError>,
+    F2: FnOnce() -> String,
 {
     match f() {
         Ok(v) => Some(v),
         Err(e) => {
-            log(&format!("{:?}\n{:?}", e.inner, e.trace));
+            log(&format!("{}\n{:?}\n{:?}", describe(), e.inner, e.trace));
             None
         }
     }

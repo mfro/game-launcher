@@ -271,10 +271,10 @@ where
         });
 
         let display_icon = self.icon.as_ref().and_then(|id| {
-            crate::nonfatal(|| {
-                let image = image::open(id)?;
-                Ok(image)
-            })
+            crate::attempt(
+                || format!("open cached icon {}", id),
+                || Ok(image::open(id)?),
+            )
         });
 
         let target = Target {
@@ -326,12 +326,15 @@ impl Index {
         });
 
         let icon = display_icon.as_ref().and_then(|image| {
-            crate::nonfatal(|| {
-                let icon_name = format!("icons/{}.png", self.next_icon);
-                image.save(&icon_name)?;
-                self.next_icon += 1;
-                Ok(icon_name)
-            })
+            crate::attempt(
+                || format!("save cached icon {:?}", provider.keys(&target)),
+                || {
+                    let icon_name = format!("icons/{}.png", self.next_icon);
+                    image.save(&icon_name)?;
+                    self.next_icon += 1;
+                    Ok(icon_name)
+                },
+            )
         });
 
         let entry = IndexEntry {
@@ -362,11 +365,14 @@ struct IndexFile {
 
 impl IndexFile {
     pub fn open(path: PathBuf) -> IndexFile {
-        let index = crate::nonfatal(|| {
-            let src = BufReader::new(File::open(&path)?);
-            let index = serde_json::from_reader(src)?;
-            Ok(index)
-        });
+        let index = crate::attempt(
+            || format!("load index"),
+            || {
+                let src = BufReader::new(File::open(&path)?);
+                let index = serde_json::from_reader(src)?;
+                Ok(index)
+            },
+        );
 
         let index = index.unwrap_or_default();
 
@@ -374,11 +380,14 @@ impl IndexFile {
     }
 
     pub fn save(&self) {
-        crate::nonfatal(|| {
-            let dst = File::create(&self.path)?;
-            serde_json::to_writer(dst, &self.index)?;
-            Ok(())
-        });
+        crate::attempt(
+            || format!("save index"),
+            || {
+                let dst = File::create(&self.path)?;
+                serde_json::to_writer(dst, &self.index)?;
+                Ok(())
+            },
+        );
     }
 }
 

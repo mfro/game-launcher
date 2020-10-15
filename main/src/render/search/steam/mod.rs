@@ -112,26 +112,29 @@ impl SteamIndex {
     pub fn new<P: AsRef<Path>>(steam_dir: P) -> SteamIndex {
         let steam_dir = steam_dir.as_ref();
 
-        let app_info = crate::nonfatal(|| {
-            let appinfo = steam_dir.join("appcache/appinfo.vdf");
-            let mut content = vec![];
-            File::open(appinfo)?.read_to_end(&mut content)?;
+        let app_info = crate::attempt(
+            || format!("read appinfo.vdf {:?}", steam_dir),
+            || {
+                let appinfo = steam_dir.join("appcache/appinfo.vdf");
+                let mut content = vec![];
+                File::open(appinfo)?.read_to_end(&mut content)?;
 
-            let mut content: &[u8] = content.as_ref();
-            let _header: &AppInfoHeader = content.load();
+                let mut content: &[u8] = content.as_ref();
+                let _header: &AppInfoHeader = content.load();
 
-            let mut app_info = HashMap::new();
-            while content.len() > 4 {
-                let entry: &AppInfoEntryHeader = content.load();
+                let mut app_info = HashMap::new();
+                while content.len() > 4 {
+                    let entry: &AppInfoEntryHeader = content.load();
 
-                let mut deserializer = ValveDeserializer::new(&mut content);
+                    let mut deserializer = ValveDeserializer::new(&mut content);
 
-                let x: AppInfoEntry = Deserialize::deserialize(&mut deserializer).unwrap();
-                app_info.insert(entry.app_id, x.appinfo);
-            }
+                    let x: AppInfoEntry = Deserialize::deserialize(&mut deserializer).unwrap();
+                    app_info.insert(entry.app_id, x.appinfo);
+                }
 
-            Ok(app_info)
-        })
+                Ok(app_info)
+            },
+        )
         .unwrap_or_default();
 
         SteamIndex {
@@ -268,14 +271,20 @@ impl SearchProvider<SteamTarget> for SteamIndex {
                     return None;
                 }
 
-                let icons = crate::nonfatal(|| Ok(extract_icons(&exe_path)?))?;
+                let icons = crate::attempt(
+                    || format!("extract icons {:?}", exe_path),
+                    || Ok(extract_icons(&exe_path)?),
+                )?;
                 icons.into_iter().next().and_then(|data| {
-                    crate::nonfatal(|| {
-                        Ok(image::load_from_memory_with_format(
-                            &data,
-                            ImageFormat::Ico,
-                        )?)
-                    })
+                    crate::attempt(
+                        || format!("load ico resource {:?}", exe_path),
+                        || {
+                            Ok(image::load_from_memory_with_format(
+                                &data,
+                                ImageFormat::Ico,
+                            )?)
+                        },
+                    )
                 })
             })
             .next()

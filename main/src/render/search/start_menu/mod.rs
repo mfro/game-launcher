@@ -56,16 +56,17 @@ impl StartMenuIndex {
             })
             // open and parse the .lnk files
             .filter_map(|(path, relative)| {
-                crate::log!("open and parse {:?}", path);
+                let target = crate::attempt(
+                    || format!("open and parse {:?}", path),
+                    || {
+                        let mut raw = vec![];
+                        File::open(&path)?.read_to_end(&mut raw)?;
+                        let lnk = ShellLink::load(&raw);
 
-                let target = crate::nonfatal(|| {
-                    let mut raw = vec![];
-                    File::open(&path)?.read_to_end(&mut raw)?;
-                    let lnk = ShellLink::load(&raw);
-
-                    let target = lnk::resolve(&lnk)?;
-                    Ok(PathBuf::from(target))
-                });
+                        let target = lnk::resolve(&lnk)?;
+                        Ok(PathBuf::from(target))
+                    },
+                );
 
                 Some((path, relative, target))
             })
@@ -158,25 +159,28 @@ impl SearchProvider<StartMenuTarget> for StartMenuIndex {
     }
 
     fn display_icon(&self, entry: &StartMenuTarget) -> Option<image::DynamicImage> {
-        crate::nonfatal(|| {
-            let mut raw = vec![];
-            File::open(&entry.lnk_path)?.read_to_end(&mut raw)?;
-            let lnk = ShellLink::load(&raw);
+        crate::attempt(
+            || format!("get icon {:?}", entry.lnk_path),
+            || {
+                let mut raw = vec![];
+                File::open(&entry.lnk_path)?.read_to_end(&mut raw)?;
+                let lnk = ShellLink::load(&raw);
 
-            let data = match lnk::extract_ico(&lnk) {
-                Some(data) => data,
-                None => {
-                    return Err(Error::new(
-                        ErrorKind::NotFound,
-                        format!("unable to extract icon for lnk {:?}", entry.lnk_path),
-                    ))?
-                }
-            };
+                let data = match lnk::extract_ico(&lnk) {
+                    Some(data) => data,
+                    None => {
+                        return Err(Error::new(
+                            ErrorKind::NotFound,
+                            format!("unable to extract icon for lnk {:?}", entry.lnk_path),
+                        ))?
+                    }
+                };
 
-            Ok(image::load_from_memory_with_format(
-                &data,
-                ImageFormat::Ico,
-            )?)
-        })
+                Ok(image::load_from_memory_with_format(
+                    &data,
+                    ImageFormat::Ico,
+                )?)
+            },
+        )
     }
 }

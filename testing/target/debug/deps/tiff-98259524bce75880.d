@@ -1,0 +1,13 @@
+c:\Users\Max\Documents\code\game-launch-electron\v3 - search rust\game-launcher\testing\target\debug\deps\tiff-98259524bce75880.rmeta: C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\lib.rs C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\decoder\mod.rs C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\decoder\ifd.rs C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\decoder\stream.rs C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\encoder\mod.rs C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\encoder\colortype.rs C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\encoder\writer.rs C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\error.rs C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\tags.rs
+
+c:\Users\Max\Documents\code\game-launch-electron\v3 - search rust\game-launcher\testing\target\debug\deps\tiff-98259524bce75880.d: C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\lib.rs C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\decoder\mod.rs C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\decoder\ifd.rs C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\decoder\stream.rs C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\encoder\mod.rs C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\encoder\colortype.rs C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\encoder\writer.rs C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\error.rs C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\tags.rs
+
+C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\lib.rs:
+C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\decoder\mod.rs:
+C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\decoder\ifd.rs:
+C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\decoder\stream.rs:
+C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\encoder\mod.rs:
+C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\encoder\colortype.rs:
+C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\encoder\writer.rs:
+C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\error.rs:
+C:\Users\Max\.cargo\registry\src\github.com-1ecc6299db9ec823\tiff-0.5.0\src\tags.rs:
