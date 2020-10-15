@@ -31,7 +31,7 @@ impl StartMenuIndex {
             PathBuf::from(appdata).join(r"Microsoft\Windows\Start Menu\Programs"),
         ];
 
-        let vec: Vec<_> = roots
+        let mut vec: Vec<_> = roots
             .iter()
             .map(|root| {
                 let iter = RecursiveSearch::new(&root).into_iter();
@@ -44,40 +44,42 @@ impl StartMenuIndex {
             // select only .lnk files
             .filter_map(|(entry, relative)| {
                 let path = entry.path();
-                match path.extension() {
-                    None => None,
-                    Some(ext) => match ext.to_str() {
-                        Some("lnk") => Some((path, relative)),
-                        Some("ini") | Some("url") => None,
-                        _ => {
-                            println!("unknown start menu entry: {:?}", relative);
-                            None
-                        }
-                    },
+                let ext = path.extension().and_then(|x| x.to_str())?;
+                match ext {
+                    "lnk" => Some((path, relative)),
+                    "ini" | "url" => None,
+                    _ => {
+                        println!("unknown start menu entry: {:?}", relative);
+                        None
+                    }
                 }
             })
             // open and parse the .lnk files
             .filter_map(|(path, relative)| {
-                let lnk = crate::nonfatal(|| {
+                crate::nonfatal(|| {
                     let mut raw = vec![];
                     File::open(&path)?.read_to_end(&mut raw)?;
-                    Ok(ShellLink::load(&raw))
-                })?;
+                    let lnk = ShellLink::load(&raw);
 
-                let target = lnk::resolve(&lnk)?;
-                Some((path, relative, target))
+                    let target = lnk::resolve(&lnk)?;
+                    let target = PathBuf::from(target);
+                    Ok((path, relative, target))
+                })
             })
             // select only .lnk files that point to 'exe', 'msc', 'url' files
-            .filter(|(path, _, target)| match target.rfind('.') {
-                None => panic!(),
-                Some(i) => match &target[i + 1..] {
-                    "exe" | "msc" => true,
-                    "url" | "chm" | "txt" | "rtf" | "pdf" | "html" | "ini" => false,
-                    other => {
-                        println!("Unknown lnk target extension: {} {:?}", other, path);
-                        false
-                    }
-                },
+            .filter(|(path, _, target)| {
+                let ext = target.extension().and_then(|x| x.to_str());
+                match ext {
+                    None => false,
+                    Some(ext) => match ext {
+                        "exe" | "msc" => true,
+                        "url" | "chm" | "txt" | "rtf" | "pdf" | "html" | "ini" => false,
+                        ext => {
+                            println!("Unknown lnk target extension: {} {:?}", ext, path);
+                            true
+                        }
+                    },
+                }
             })
             // get display names and add to the tuple
             .map(|(path, relative, target)| {
@@ -86,24 +88,29 @@ impl StartMenuIndex {
             })
             .collect();
 
-        // declare new variable for deduplication
-        vec.iter()
-            // deduplicate .lnk files that are in the same relative path within the start menu
-            .filter(|(path1, relative, _, name1)| {
-                let (path2, _, _, name2) = vec
-                    .iter()
-                    .rfind(|(_, relative2, _, _)| relative2 == relative)
-                    .unwrap();
+        for i in (0..vec.len()).rev() {
+            // deduplicate .lnk files that either:
+            //   - are in the same relative path within the start menu
+            //   - have the same target and name
 
-                // if path == path2, then its the same lnk
-                // if don't have the same name, then they are distinct
-                path1 == path2 || name1 != name2
-            })
+            let a = &vec[i];
+            let other = vec[..i]
+                .iter()
+                .find(|b| a.1 == b.1 || (a.2 == b.2 && a.3 == b.3))
+                .is_some();
+
+            if other {
+                vec.remove(i);
+            }
+        }
+
+        // declare new variable for deduplication
+        vec.into_iter()
             // construct index entries
-            .map(|(path, relative, _, name)| StartMenuTarget {
-                name: name.clone(),
+            .map(|(lnk_path, relative, _, name)| StartMenuTarget {
+                name,
+                lnk_path,
                 relative: relative.to_str().unwrap().to_owned(),
-                lnk_path: path.clone(),
             })
             .collect()
     }
@@ -119,6 +126,7 @@ impl Index<StartMenuTarget> for StartMenuIndex {
                 .unwrap()
                 .to_owned(),
             entry.name.clone(),
+            entry.relative.clone(),
         ]
     }
 
