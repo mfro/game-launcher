@@ -1,6 +1,6 @@
 use std::{fs::File, io::prelude::*, process::Command};
 
-use super::Index;
+use super::SearchProvider;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SearchConfig {
@@ -47,7 +47,7 @@ impl SearchConfig {
     }
 }
 
-impl Index<ManualTarget> for SearchConfig {
+impl SearchProvider<ManualTarget> for SearchConfig {
     fn keys(&self, entry: &ManualTarget) -> Vec<String> {
         entry.names.clone()
     }

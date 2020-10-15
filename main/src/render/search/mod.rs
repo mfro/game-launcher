@@ -1,35 +1,37 @@
-use std::{cmp::Ordering, fs::File, io::BufReader, path::Path};
+use std::{
+    cell::RefCell, cmp::Ordering, fs::File, io::BufReader, path::Path, path::PathBuf, rc::Rc,
+};
 
 use cef::{v8, CefV8Context, CefV8Propertyattribute, CefV8Value};
 use image::{imageops::FilterType, DynamicImage, ImageOutputFormat};
-use serde::{de::DeserializeOwned, Serialize};
 
 mod assets;
 
 mod config;
-use config::SearchConfig;
+use config::{ManualTarget, SearchConfig};
 
 mod appx;
-use appx::AppxIndex;
+use appx::{AppxIndex, AppxTarget};
 
 mod start_menu;
-use start_menu::StartMenuIndex;
+use start_menu::{StartMenuIndex, StartMenuTarget};
 
 mod steam;
-use steam::SteamIndex;
+use steam::{SteamIndex, SteamTarget};
 
-pub type MatchScore = [usize; 2];
+pub type MatchScore = (usize, usize, u64);
 
-pub trait Index<K> {
-    fn keys(&self, entry: &K) -> Vec<String>;
-    fn launch(&self, entry: &K) -> Box<dyn Fn()>;
-    fn details(&self, entry: &K) -> String;
-    fn display_icon(&self, entry: &K) -> Option<DynamicImage>;
+pub trait SearchProvider<K> {
+    fn keys(&self, target: &K) -> Vec<String>;
+    fn launch(&self, target: &K) -> Box<dyn Fn()>;
+    fn details(&self, target: &K) -> String;
+    fn display_icon(&self, target: &K) -> Option<DynamicImage>;
 }
 
 /// Contains information required to find a value in the index.
 /// That means a list of strings
 pub struct Key {
+    count: u64,
     keys: Vec<String>,
 }
 
@@ -48,7 +50,9 @@ impl Key {
                 let word_index = chars.iter().filter(|&&c| c == ' ').count();
                 let char_index = chars.iter().rev().position(|&x| x == ' ').unwrap_or(index);
 
-                return Some((key, index, [char_index, word_index]));
+                let score = (char_index, word_index, u64::MAX - self.count);
+
+                return Some((key, index, score));
             }
         }
 
@@ -65,41 +69,7 @@ pub struct Target {
 }
 
 impl Target {
-    pub fn from_index<K, Idx: Index<K>>(index: &Idx, key: &K) -> Target {
-        let details = index.details(key);
-        let display_icon = index.display_icon(key);
-        let launch = index.launch(key);
-
-        let display_icon = display_icon.map(|icon| {
-            let icon = icon.to_rgba();
-
-            let filter = if icon.dimensions().0 <= 32 {
-                // println!("{}: {}", index.keys(key)[0], icon.dimensions().0);
-                FilterType::Nearest
-            } else {
-                // if icon.dimensions().0 < 64 {
-                //     println!("{}: {}", index.keys(key)[0], icon.dimensions().0)
-                // }
-
-                FilterType::CatmullRom
-            };
-
-            let scaled = image::imageops::resize(&icon, 64, 64, filter);
-
-            let mut out = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
-            image::imageops::overlay(&mut out, &scaled, 0, 0);
-
-            DynamicImage::ImageRgba8(out)
-        });
-
-        Target {
-            details,
-            display_icon,
-            launch,
-        }
-    }
-
-    pub fn to_cef(self, ctx: &CefV8Context) -> CefV8Value {
+    fn to_cef(self, ctx: &CefV8Context) -> CefV8Value {
         let object = CefV8Value::create_object(None, None).unwrap();
 
         let key = "details";
@@ -126,7 +96,7 @@ impl Target {
     }
 }
 
-pub struct SearchIndex<T = Target> {
+pub struct Search<T = Target> {
     entries: Vec<(Key, T)>,
 }
 
@@ -137,82 +107,73 @@ pub struct Match<'a, T> {
     object: &'a T,
 }
 
-impl SearchIndex {
-    pub fn new() -> SearchIndex {
-        let mut idx = SearchIndex { entries: vec![] };
+impl Search {
+    pub fn load<P: AsRef<Path>>(state_path: P) -> Search {
+        let index = IndexFile::open(state_path.as_ref().to_owned());
+        let index = Rc::new(RefCell::new(index));
+
+        let mut idx = Search { entries: vec![] };
 
         let config = SearchConfig::load();
-        idx.include(&config, &config.index());
+        idx.include_helper(&index, &config, config.index());
 
         if config.index_appx {
             let appx = AppxIndex::new();
-            idx.include(&appx, &appx.index());
-        }
-
-        if config.index_start_menu {
-            let start_menu = StartMenuIndex::new();
-            idx.include(&start_menu, &start_menu.index());
+            idx.include_helper(&index, &appx, appx.index());
         }
 
         if let Some(root) = &config.index_steam {
             let steam = SteamIndex::new(root);
-            idx.include(&steam, &steam.index());
+            idx.include_helper(&index, &steam, steam.index());
         }
+
+        if config.index_start_menu {
+            let start_menu = StartMenuIndex::new();
+            idx.include_helper(&index, &start_menu, start_menu.index());
+        }
+
+        index.borrow().save();
 
         idx
     }
 
-    pub fn include_with_cache<K, Idx>(&mut self, key: &str, index: &Idx)
+    fn include_helper<K, P>(&mut self, index: &Rc<RefCell<IndexFile>>, provider: &P, new: Vec<K>)
     where
-        K: Serialize + DeserializeOwned + Eq,
-        Idx: Index<K>,
+        K: 'static + Clone + Eq,
+        P: SearchProvider<K>,
+        Index: IndexType<K>,
     {
-        crate::nonfatal(|| {
-            let path = Path::new("index").join(key).with_extension("json");
-            let file = BufReader::new(File::open(path)?);
-            let parsed: Vec<K> = serde_json::from_reader(file)?;
+        let mut index_mut = index.borrow_mut();
+        let index_mut = &mut index_mut.index;
 
-            for entry in &parsed {
-                let keys = index.keys(entry);
-
-                let key = Key { keys };
-                let target = Target::from_index(index, entry);
-
-                self.entries.push((key, target));
+        for target in new {
+            if index_mut.get_save().iter().any(|x| x.target == target) {
+                continue;
             }
 
-            Ok(())
-        });
-    }
-
-    pub fn include<'a, K, Idx, Iter>(&mut self, index: &Idx, entries: Iter)
-    where
-        K: 'a,
-        Idx: Index<K>,
-        Iter: IntoIterator<Item = &'a K>,
-    {
-        for entry in entries {
-            let keys = index.keys(entry);
-
-            let key = Key { keys };
-            let target = Target::from_index(index, entry);
-
-            self.entries.push((key, target));
+            index_mut.add_entry(target, provider);
         }
+
+        let entries = index_mut
+            .get_save()
+            .iter()
+            .map(|e| e.prepare(index.clone(), provider));
+
+        self.entries.extend(entries);
     }
 
-    pub fn into_cef(self, ctx: &CefV8Context) -> SearchIndex<CefV8Value> {
-        let entries = self
+    pub fn into_cef(self, ctx: &CefV8Context) -> Search<CefV8Value> {
+        let entries: Vec<_> = self
             .entries
             .into_iter()
             .map(|(entry, target)| (entry, target.to_cef(ctx)))
             .collect();
 
-        SearchIndex { entries }
+        Search { entries }
     }
 }
 
-impl<T> SearchIndex<T> {
+impl<T> Search<T> {
     pub fn search(&self, query: &str) -> Vec<Match<T>> {
         let query = query.to_lowercase();
 
@@ -242,7 +203,7 @@ impl<T> SearchIndex<T> {
     }
 }
 
-impl SearchIndex<CefV8Value> {
+impl Search<CefV8Value> {
     pub fn search_cef(&self, query: &str) -> CefV8Value {
         let matches = self.search(query);
 
@@ -272,3 +233,175 @@ impl SearchIndex<CefV8Value> {
         }))
     }
 }
+
+#[derive(Serialize, Deserialize, Clone)]
+struct IndexEntry<K> {
+    target: K,
+    icon: Option<String>,
+    counter: u64,
+}
+
+impl<K> IndexEntry<K>
+where
+    K: 'static + Clone + Eq,
+{
+    fn prepare<P>(&self, index: Rc<RefCell<IndexFile>>, provider: &P) -> (Key, Target)
+    where
+        P: SearchProvider<K>,
+        Index: IndexType<K>,
+    {
+        let keys = provider.keys(&self.target);
+
+        let key = Key {
+            count: self.counter,
+            keys,
+        };
+
+        let details = provider.details(&self.target);
+
+        let launch = provider.launch(&self.target);
+
+        let target = self.target.clone();
+        let launch = Box::new(move || {
+            launch();
+            let mut index = index.borrow_mut();
+            let mut entry = index.index.get_entry(&target);
+            entry.counter += 1;
+            index.save();
+        });
+
+        let display_icon = self.icon.as_ref().and_then(|id| {
+            crate::nonfatal(|| {
+                let image = image::open(id)?;
+                Ok(image)
+            })
+        });
+
+        let target = Target {
+            details,
+            display_icon,
+            launch,
+        };
+
+        (key, target)
+    }
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct Index {
+    next_icon: u64,
+    config: Vec<IndexEntry<ManualTarget>>,
+    appx: Vec<IndexEntry<AppxTarget>>,
+    start_menu: Vec<IndexEntry<StartMenuTarget>>,
+    steam: Vec<IndexEntry<SteamTarget>>,
+}
+
+impl Index {
+    fn add_entry<K, P>(&mut self, target: K, provider: &P)
+    where
+        K: Clone + Eq,
+        P: SearchProvider<K>,
+        Index: IndexType<K>,
+    {
+        let display_icon = provider.display_icon(&target).map(|icon| {
+            let icon = icon.to_rgba();
+
+            let filter = if icon.dimensions().0 <= 32 {
+                // println!("{}: {}", index.keys(key)[0], icon.dimensions().0);
+                FilterType::Nearest
+            } else {
+                // if icon.dimensions().0 < 64 {
+                //     println!("{}: {}", index.keys(key)[0], icon.dimensions().0)
+                // }
+
+                FilterType::CatmullRom
+            };
+
+            let scaled = image::imageops::resize(&icon, 64, 64, filter);
+
+            let mut out = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
+            image::imageops::overlay(&mut out, &scaled, 0, 0);
+
+            DynamicImage::ImageRgba8(out)
+        });
+
+        let icon = display_icon.as_ref().and_then(|image| {
+            crate::nonfatal(|| {
+                let icon_name = format!("icons/{}.png", self.next_icon);
+                image.save(&icon_name)?;
+                self.next_icon += 1;
+                Ok(icon_name)
+            })
+        });
+
+        let entry = IndexEntry {
+            target,
+            icon,
+            counter: 0,
+        };
+
+        self.get_save_mut().push(entry);
+    }
+
+    fn get_entry<K>(&mut self, key: &K) -> &mut IndexEntry<K>
+    where
+        K: Clone + Eq,
+        Index: IndexType<K>,
+    {
+        let list = self.get_save_mut();
+        let existing = list.iter_mut().find(|x| x.target == *key);
+
+        existing.unwrap()
+    }
+}
+
+struct IndexFile {
+    path: PathBuf,
+    index: Index,
+}
+
+impl IndexFile {
+    pub fn open(path: PathBuf) -> IndexFile {
+        let index = crate::nonfatal(|| {
+            let src = BufReader::new(File::open(&path)?);
+            let index = serde_json::from_reader(src)?;
+            Ok(index)
+        });
+
+        let index = index.unwrap_or_default();
+
+        IndexFile { index, path }
+    }
+
+    pub fn save(&self) {
+        crate::nonfatal(|| {
+            let dst = File::create(&self.path)?;
+            serde_json::to_writer(dst, &self.index)?;
+            Ok(())
+        });
+    }
+}
+
+trait IndexType<K: Clone + Eq> {
+    fn get_save(&self) -> &[IndexEntry<K>];
+    fn get_save_mut(&mut self) -> &mut Vec<IndexEntry<K>>;
+}
+
+macro_rules! save_state {
+    ( $name:ident, $key:ty ) => {
+        impl IndexType<$key> for Index {
+            fn get_save(&self) -> &[IndexEntry<$key>] {
+                &self.$name
+            }
+
+            fn get_save_mut(&mut self) -> &mut Vec<IndexEntry<$key>> {
+                &mut self.$name
+            }
+        }
+    };
+}
+
+save_state!(config, ManualTarget);
+save_state!(appx, AppxTarget);
+save_state!(steam, SteamTarget);
+save_state!(start_menu, StartMenuTarget);

@@ -105,11 +105,8 @@ fn log_path() -> std::io::Result<PathBuf> {
     Ok(log_dir.join("error.log"))
 }
 
-pub(crate) fn nonfatal<T, F>(f: F) -> Option<T>
-where
-    F: FnOnce() -> Result<T, MyError>,
-{
-    fn log(e: MyError) -> std::io::Result<()> {
+pub(crate) fn log(a: &str) {
+    fn log(e: &str) -> std::io::Result<()> {
         let log_path = log_path()?;
 
         let mut file = OpenOptions::new()
@@ -117,16 +114,29 @@ where
             .create(true)
             .open(&log_path)?;
 
-        writeln!(file, "{:?}", e.inner)?;
-        writeln!(file, "{:?}", e.trace)?;
+        writeln!(file, "{}", e)?;
 
         Ok(())
     }
 
+    let _ = log(a);
+}
+
+#[macro_export]
+macro_rules! log {
+    ( $($arg:tt)* ) => {
+        crate::log(&format!( $( $arg )* ))
+    };
+}
+
+pub(crate) fn nonfatal<T, F>(f: F) -> Option<T>
+where
+    F: FnOnce() -> Result<T, MyError>,
+{
     match f() {
         Ok(v) => Some(v),
         Err(e) => {
-            let _ = log(e);
+            log(&format!("{:?}\n{:?}", e.inner, e.trace));
             None
         }
     }

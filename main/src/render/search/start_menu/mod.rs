@@ -8,7 +8,7 @@ use lnk::ShellLink;
 
 use crate::common::{RecursiveSearch, ToWide};
 
-use super::Index;
+use super::SearchProvider;
 
 pub struct StartMenuIndex {}
 
@@ -56,20 +56,23 @@ impl StartMenuIndex {
             })
             // open and parse the .lnk files
             .filter_map(|(path, relative)| {
-                crate::nonfatal(|| {
+                crate::log!("open and parse {:?}", path);
+
+                let target = crate::nonfatal(|| {
                     let mut raw = vec![];
                     File::open(&path)?.read_to_end(&mut raw)?;
                     let lnk = ShellLink::load(&raw);
 
                     let target = lnk::resolve(&lnk)?;
-                    let target = PathBuf::from(target);
-                    Ok((path, relative, target))
-                })
+                    Ok(PathBuf::from(target))
+                });
+
+                Some((path, relative, target))
             })
             // select only .lnk files that point to 'exe', 'msc', 'url' files
-            .filter(|(path, _, target)| {
-                let ext = target.extension().and_then(|x| x.to_str());
-                match ext {
+            .filter(|(path, _, target)| match target {
+                None => true, // allow links that couldn't be resolved
+                Some(target) => match target.extension().and_then(|x| x.to_str()) {
                     None => false,
                     Some(ext) => match ext {
                         "exe" | "msc" => true,
@@ -79,7 +82,7 @@ impl StartMenuIndex {
                             true
                         }
                     },
-                }
+                },
             })
             // get display names and add to the tuple
             .map(|(path, relative, target)| {
@@ -116,7 +119,7 @@ impl StartMenuIndex {
     }
 }
 
-impl Index<StartMenuTarget> for StartMenuIndex {
+impl SearchProvider<StartMenuTarget> for StartMenuIndex {
     fn keys(&self, entry: &StartMenuTarget) -> Vec<String> {
         vec![
             entry

@@ -4,7 +4,7 @@ use cef::{
     v8, CefBrowser, CefFrame, CefProcessId, CefProcessMessage, CefV8Context,
     CefV8Propertyattribute, CefV8Value, RenderProcessHandler,
 };
-use search::SearchIndex;
+use search::Search;
 
 pub mod search;
 
@@ -28,7 +28,7 @@ impl RenderProcessHandler for MyRenderProcessHandler {
     ) -> () {
         let a = Instant::now();
 
-        let search = SearchIndex::new();
+        let search = Search::load("index.json");
 
         let b = Instant::now();
         println!("created search index: {:?}", b - a);

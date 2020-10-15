@@ -14,7 +14,7 @@ use vdf_binary::ValveDeserializer;
 
 use crate::common::extract_icons;
 
-use super::Index;
+use super::SearchProvider;
 
 flat_data!(AppInfoHeader);
 #[repr(C, packed)]
@@ -229,7 +229,7 @@ impl SteamIndex {
     }
 }
 
-impl Index<SteamTarget> for SteamIndex {
+impl SearchProvider<SteamTarget> for SteamIndex {
     fn keys(&self, entry: &SteamTarget) -> Vec<String> {
         vec![entry.name.clone()]
     }

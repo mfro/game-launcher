@@ -16,7 +16,7 @@ use winapi::{
     um::winuser::GetWindowThreadProcessId, um::winuser::GW_OWNER,
 };
 
-use super::Index;
+use super::SearchProvider;
 use crate::{
     bindings::windows::management::deployment::PackageManager,
     common::{Dll, ToWide},
@@ -389,7 +389,7 @@ impl AppxIndex {
     }
 }
 
-impl Index<AppxTarget> for AppxIndex {
+impl SearchProvider<AppxTarget> for AppxIndex {
     fn keys(&self, entry: &AppxTarget) -> Vec<String> {
         vec![entry.name.clone()]
     }
