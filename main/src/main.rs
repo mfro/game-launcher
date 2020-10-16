@@ -15,12 +15,12 @@ extern crate winrt;
 extern crate com;
 
 #[macro_use]
-extern crate serde_derive;
-
-#[macro_use]
 extern crate flat;
 
-use std::{fs::OpenOptions, io::prelude::*, io::Error, io::ErrorKind, path::Path, path::PathBuf};
+#[macro_use]
+extern crate serde_derive;
+
+use std::{fmt::Debug, fs::OpenOptions, io::Error, io::ErrorKind, io::prelude::*, path::Path, path::PathBuf};
 
 use backtrace::Backtrace;
 use cef::{
@@ -75,11 +75,6 @@ fn main() {
         std::fs::remove_file(x).unwrap();
     }
 
-    // render::search::appx::index();
-    // let x = render::search::Search::new();
-    // x.search("valor".to_owned());
-    // ntfs::test();
-
     let hinstance = unsafe { GetModuleHandleA(std::ptr::null()) };
     let main_args = CefMainArgs::new(hinstance as _);
 
@@ -105,6 +100,13 @@ fn log_path() -> std::io::Result<PathBuf> {
     Ok(log_dir.join("error.log"))
 }
 
+#[macro_export]
+macro_rules! log {
+    ( $($arg:tt)* ) => {
+        crate::log(&format!( $( $arg )* ))
+    };
+}
+
 pub(crate) fn log(a: &str) {
     fn log(e: &str) -> std::io::Result<()> {
         let log_path = log_path()?;
@@ -123,13 +125,17 @@ pub(crate) fn log(a: &str) {
 }
 
 #[macro_export]
-macro_rules! log {
-    ( $($arg:tt)* ) => {
-        crate::log(&format!( $( $arg )* ))
+macro_rules! attempt {
+    ( $action:expr ) => {
+        crate::attempt(None, || Ok($action))
+    };
+
+    ( ( $($arg:tt)* ), $action:expr ) => {
+        crate::attempt(Some(|| format!( $( $arg )* )), || Ok($action))
     };
 }
 
-pub(crate) fn attempt<T, F, F2>(describe: F2, f: F) -> Option<T>
+pub(crate) fn attempt<T, F, F2>(describe: Option<F2>, f: F) -> Option<T>
 where
     F: FnOnce() -> Result<T, MyError>,
     F2: FnOnce() -> String,
@@ -137,18 +143,21 @@ where
     match f() {
         Ok(v) => Some(v),
         Err(e) => {
-            log(&format!("{}\n{:?}\n{:?}", describe(), e.inner, e.trace));
+            if let Some(describe) = describe {
+                log(&format!("{}\n{:?}\n{:?}", describe(), e.inner, e.trace));
+            }
+
             None
         }
     }
 }
 
 pub(crate) struct MyError {
-    inner: Box<dyn std::fmt::Debug>,
+    inner: Box<dyn Debug>,
     trace: Backtrace,
 }
 
-impl<T: 'static + std::fmt::Debug> From<T> for MyError {
+impl<T: 'static + Debug> From<T> for MyError {
     fn from(src: T) -> Self {
         let inner = Box::new(src);
         let trace = Backtrace::new();

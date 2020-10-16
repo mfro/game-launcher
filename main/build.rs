@@ -1,8 +1,7 @@
 extern crate winrt;
-use winrt::*;
 
 fn main() {
-    build!(
+    winrt::build!(
         dependencies
             os
         types

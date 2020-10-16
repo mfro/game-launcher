@@ -1,6 +1,6 @@
-use std::{fs::File, io::prelude::*, io::Error, io::ErrorKind, path::PathBuf};
+use std::{fs::File, io::Cursor, io::Error, io::ErrorKind, io::prelude::*, path::PathBuf};
 
-use image::ImageFormat;
+use image::{DynamicImage, ico::IcoDecoder};
 use winapi::um::shellapi::ShellExecuteW;
 
 mod lnk;
@@ -56,17 +56,14 @@ impl StartMenuIndex {
             })
             // open and parse the .lnk files
             .filter_map(|(path, relative)| {
-                let target = crate::attempt(
-                    || format!("open and parse {:?}", path),
-                    || {
-                        let mut raw = vec![];
-                        File::open(&path)?.read_to_end(&mut raw)?;
-                        let lnk = ShellLink::load(&raw);
+                let target = crate::attempt!(("resolve lnk {:?}", path), {
+                    let mut raw = vec![];
+                    File::open(&path)?.read_to_end(&mut raw)?;
+                    let lnk = ShellLink::load(&raw);
 
-                        let target = lnk::resolve(&lnk)?;
-                        Ok(PathBuf::from(target))
-                    },
-                );
+                    let target = lnk::resolve(&lnk)?;
+                    PathBuf::from(target)
+                });
 
                 Some((path, relative, target))
             })
@@ -122,6 +119,11 @@ impl StartMenuIndex {
 
 impl SearchProvider<StartMenuTarget> for StartMenuIndex {
     fn keys(&self, entry: &StartMenuTarget) -> Vec<String> {
+        let relative = match entry.relative.rfind('.') {
+            Some(i) => entry.relative[..i].to_owned(),
+            None => entry.relative.clone(),
+        };
+
         vec![
             entry
                 .lnk_path
@@ -130,7 +132,7 @@ impl SearchProvider<StartMenuTarget> for StartMenuIndex {
                 .unwrap()
                 .to_owned(),
             entry.name.clone(),
-            entry.relative.clone(),
+            relative,
         ]
     }
 
@@ -159,28 +161,25 @@ impl SearchProvider<StartMenuTarget> for StartMenuIndex {
     }
 
     fn display_icon(&self, entry: &StartMenuTarget) -> Option<image::DynamicImage> {
-        crate::attempt(
-            || format!("get icon {:?}", entry.lnk_path),
-            || {
-                let mut raw = vec![];
-                File::open(&entry.lnk_path)?.read_to_end(&mut raw)?;
-                let lnk = ShellLink::load(&raw);
+        crate::attempt!(("get lnk icon {:?}", entry.lnk_path), {
+            let mut raw = vec![];
+            File::open(&entry.lnk_path)?.read_to_end(&mut raw)?;
+            let lnk = ShellLink::load(&raw);
 
-                let data = match lnk::extract_ico(&lnk) {
-                    Some(data) => data,
-                    None => {
-                        return Err(Error::new(
-                            ErrorKind::NotFound,
-                            format!("unable to extract icon for lnk {:?}", entry.lnk_path),
-                        ))?
-                    }
-                };
+            let data = match lnk::extract_ico(&lnk) {
+                Some(data) => data,
+                None => {
+                    return Err(Error::new(
+                        ErrorKind::NotFound,
+                        format!("unable to extract icon for lnk {:?}", entry.lnk_path),
+                    ))?
+                }
+            };
 
-                Ok(image::load_from_memory_with_format(
-                    &data,
-                    ImageFormat::Ico,
-                )?)
-            },
-        )
+            let r = Cursor::new(&data);
+            let decoder = IcoDecoder::new_unchecked(r)?;
+            DynamicImage::from_decoder(decoder)?
+            // image::load_from_memory_with_format(&data, ImageFormat::Ico)?
+        })
     }
 }

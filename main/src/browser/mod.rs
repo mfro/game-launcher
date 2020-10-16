@@ -46,36 +46,33 @@ impl SchemeHandlerFactory for MySchemeHandlerFactory {
         let path = path.trim_start_matches('/');
 
         if path.starts_with("app/") {
-            let handler = crate::attempt(
-                || format!("handle app scheme {}", url),
-                || {
-                    let mut data = vec![];
-                    File::open(&path)?.read_to_end(&mut data)?;
+            let handler = crate::attempt!(("handle app scheme {}", url), {
+                let mut data = vec![];
+                File::open(&path)?.read_to_end(&mut data)?;
 
-                    let mime_type = match path.rfind('.') {
-                        None => "application/octet-stream".into(),
-                        Some(i) => match &path[i + 1..] {
-                            "html" => "text/html",
-                            "css" => "text/css",
-                            "js" => "text/javascript",
-                            "ttf" => "font/ttf",
-                            "png" => "image/png",
-                            "jpg" => "image/jpeg",
-                            "jpeg" => "image/jpeg",
-                            _ => panic!("unknown mime type: {}", path),
-                        },
-                    };
+                let mime_type = match path.rfind('.') {
+                    None => "application/octet-stream".into(),
+                    Some(i) => match &path[i + 1..] {
+                        "html" => "text/html",
+                        "css" => "text/css",
+                        "js" => "text/javascript",
+                        "ttf" => "font/ttf",
+                        "png" => "image/png",
+                        "jpg" => "image/jpeg",
+                        "jpeg" => "image/jpeg",
+                        _ => panic!("unknown mime type: {}", path),
+                    },
+                };
 
-                    let headers = vec![];
+                let headers = vec![];
 
-                    Ok(CefResourceHandler::new(InMemoryResourceHandler {
-                        mime_type: Some(mime_type.into()),
-                        headers,
-                        data,
-                        index: 0,
-                    }))
-                },
-            );
+                CefResourceHandler::new(InMemoryResourceHandler {
+                    mime_type: Some(mime_type.into()),
+                    headers,
+                    data,
+                    index: 0,
+                })
+            });
 
             handler.or(Some(NotFoundResourceHandler.into()))
         } else {

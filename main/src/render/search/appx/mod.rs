@@ -455,38 +455,27 @@ impl SearchProvider<AppxTarget> for AppxIndex {
         let family_name = &entry.launch_id[..i];
         let app_id = &entry.launch_id[i + 1..];
 
-        let packages: Vec<_> = crate::attempt(
-            || format!("find package {}", family_name),
-            || {
-                let packages = self
-                    .pm
-                    .find_packages_by_user_security_id_package_family_name("", family_name)?;
-                Ok(packages.into_iter().collect())
-            },
-        )?;
+        let packages: Vec<_> = crate::attempt!(("find appx package {}", family_name), {
+            let packages = self
+                .pm
+                .find_packages_by_user_security_id_package_family_name("", family_name)?;
+            packages.into_iter().collect()
+        })?;
 
         assert!(packages.len() == 1);
 
-        let install_path = crate::attempt(
-            || format!("get install location {}", family_name),
-            || {
-                let path = packages[0].installed_location()?.path()?.to_string();
-                Ok(path)
-            },
-        )?;
+        let install_path = crate::attempt!(("get appx install location {}", family_name), {
+            packages[0].installed_location()?.path()?.to_string()
+        })?;
 
         let path = Path::new(&install_path);
 
-        let manifest: Package = crate::attempt(
-            || format!("load manifest {}", family_name),
-            || {
-                let mut manifest = vec![];
-                let manifest_path = path.join("AppxManifest.xml");
-                File::open(manifest_path)?.read_to_end(&mut manifest)?;
-                let package = quick_xml::de::from_reader(&manifest as &[u8])?;
-                Ok(package)
-            },
-        )?;
+        let manifest: Package = crate::attempt!(("load manifest {}", family_name), {
+            let mut manifest = vec![];
+            let manifest_path = path.join("AppxManifest.xml");
+            File::open(manifest_path)?.read_to_end(&mut manifest)?;
+            quick_xml::de::from_reader(&manifest as &[u8])?
+        })?;
 
         let app = manifest
             .applications
@@ -514,34 +503,31 @@ impl SearchProvider<AppxTarget> for AppxIndex {
             let found = find_resource(&pris, &uri_tail, false)?;
             let logo_path = path.join(found);
 
-            let valid = crate::attempt(
-                || format!("validate icon {}", family_name),
-                || {
-                    let src = image::open(&logo_path)?;
-                    let src = src.resize(64, 64, FilterType::CatmullRom);
+            let valid = crate::attempt!(("validate appx icon {}", family_name), {
+                let src = image::open(&logo_path)?;
+                let src = src.resize(64, 64, FilterType::CatmullRom);
 
-                    let mut full = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
-                    image::imageops::overlay(&mut full, &src, 0, 0);
+                let mut full = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
+                image::imageops::overlay(&mut full, &src, 0, 0);
 
-                    let mut sum = [0.0; 3];
-                    let mut total_alpha = 0.0;
-                    for (_, _, pixel) in full.enumerate_pixels() {
-                        sum[0] += pixel[0] as f64 * pixel[3] as f64;
-                        sum[1] += pixel[1] as f64 * pixel[3] as f64;
-                        sum[2] += pixel[2] as f64 * pixel[3] as f64;
-                        total_alpha += pixel[3] as f64;
-                    }
-                    sum[0] /= total_alpha * 255.0;
-                    sum[1] /= total_alpha * 255.0;
-                    sum[2] /= total_alpha * 255.0;
+                let mut sum = [0.0; 3];
+                let mut total_alpha = 0.0;
+                for (_, _, pixel) in full.enumerate_pixels() {
+                    sum[0] += pixel[0] as f64 * pixel[3] as f64;
+                    sum[1] += pixel[1] as f64 * pixel[3] as f64;
+                    sum[2] += pixel[2] as f64 * pixel[3] as f64;
+                    total_alpha += pixel[3] as f64;
+                }
+                sum[0] /= total_alpha * 255.0;
+                sum[1] /= total_alpha * 255.0;
+                sum[2] /= total_alpha * 255.0;
 
-                    let image = luminance(&sum);
-                    let white = luminance(&[0.0; 3]);
-                    let ratio = (image + 0.05) / (white + 0.05);
+                let image = luminance(&sum);
+                let white = luminance(&[0.0; 3]);
+                let ratio = (image + 0.05) / (white + 0.05);
 
-                    Ok(ratio < 15.0)
-                },
-            )?;
+                ratio < 15.0
+            })?;
 
             if valid {
                 logo_path
@@ -554,17 +540,14 @@ impl SearchProvider<AppxTarget> for AppxIndex {
             }
         };
 
-        crate::attempt(
-            || format!("resize icon {}", family_name),
-            || {
-                let src = image::open(logo_path)?;
-                let src = src.resize(64, 64, FilterType::CatmullRom);
+        crate::attempt!(("resize appx icon {}", family_name), {
+            let src = image::open(logo_path)?;
+            let src = src.resize(64, 64, FilterType::CatmullRom);
 
-                let mut out = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
-                image::imageops::overlay(&mut out, &src, 0, 0);
+            let mut out = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
+            image::imageops::overlay(&mut out, &src, 0, 0);
 
-                Ok(DynamicImage::ImageRgba8(out))
-            },
-        )
+            DynamicImage::ImageRgba8(out)
+        })
     }
 }

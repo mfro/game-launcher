@@ -1,9 +1,10 @@
 use std::{
-    collections::HashMap, fs::File, io::prelude::*, path::Path, path::PathBuf, process::Command,
+    collections::HashMap, fs::File, io::prelude::*, io::Cursor, path::Path, path::PathBuf,
+    process::Command,
 };
 
 use flat::prelude::*;
-use image::ImageFormat;
+use image::{ico::IcoDecoder, DynamicImage};
 use serde::Deserialize;
 
 mod vdf_text;
@@ -112,29 +113,26 @@ impl SteamIndex {
     pub fn new<P: AsRef<Path>>(steam_dir: P) -> SteamIndex {
         let steam_dir = steam_dir.as_ref();
 
-        let app_info = crate::attempt(
-            || format!("read appinfo.vdf {:?}", steam_dir),
-            || {
-                let appinfo = steam_dir.join("appcache/appinfo.vdf");
-                let mut content = vec![];
-                File::open(appinfo)?.read_to_end(&mut content)?;
+        let app_info = crate::attempt!(("read appinfo.vdf {:?}", steam_dir), {
+            let appinfo = steam_dir.join("appcache/appinfo.vdf");
+            let mut content = vec![];
+            File::open(appinfo)?.read_to_end(&mut content)?;
 
-                let mut content: &[u8] = content.as_ref();
-                let _header: &AppInfoHeader = content.load();
+            let mut content: &[u8] = content.as_ref();
+            let _header: &AppInfoHeader = content.load();
 
-                let mut app_info = HashMap::new();
-                while content.len() > 4 {
-                    let entry: &AppInfoEntryHeader = content.load();
+            let mut app_info = HashMap::new();
+            while content.len() > 4 {
+                let entry: &AppInfoEntryHeader = content.load();
 
-                    let mut deserializer = ValveDeserializer::new(&mut content);
+                let mut deserializer = ValveDeserializer::new(&mut content);
 
-                    let x: AppInfoEntry = Deserialize::deserialize(&mut deserializer).unwrap();
-                    app_info.insert(entry.app_id, x.appinfo);
-                }
+                let x: AppInfoEntry = Deserialize::deserialize(&mut deserializer).unwrap();
+                app_info.insert(entry.app_id, x.appinfo);
+            }
 
-                Ok(app_info)
-            },
-        )
+            app_info
+        })
         .unwrap_or_default();
 
         SteamIndex {
@@ -271,22 +269,49 @@ impl SearchProvider<SteamTarget> for SteamIndex {
                     return None;
                 }
 
-                let icons = crate::attempt(
-                    || format!("extract icons {:?}", exe_path),
-                    || Ok(extract_icons(&exe_path)?),
-                )?;
-                icons.into_iter().next().and_then(|data| {
-                    crate::attempt(
-                        || format!("load ico resource {:?}", exe_path),
-                        || {
-                            Ok(image::load_from_memory_with_format(
-                                &data,
-                                ImageFormat::Ico,
-                            )?)
-                        },
-                    )
+                crate::attempt!(("load steam icon {:?}", exe_path), {
+                    let data = extract_icons(&exe_path)?;
+
+                    let r = Cursor::new(&data[0]);
+                    let decoder = IcoDecoder::new_unchecked(r)?;
+                    DynamicImage::from_decoder(decoder)?
                 })
             })
             .next()
     }
+}
+
+#[test]
+fn test() -> Result<(), Box<dyn std::error::Error>> {
+    use self::vdf_binary::{ValveReader, ValveToken};
+
+    let steam_dir = Path::new(r"C:\Program Files (x86)\Steam");
+    let appinfo = steam_dir.join("appcache/appinfo.vdf");
+    let mut content = vec![];
+    File::open(appinfo)?.read_to_end(&mut content)?;
+
+    let mut content: &[u8] = content.as_ref();
+    let _header: &AppInfoHeader = content.load();
+
+    while content.len() > 4 {
+        let _entry: &AppInfoEntryHeader = content.load();
+
+        let reader = ValveReader::new(&mut content);
+        let mut indent = String::new();
+
+        for node in reader {
+            match node {
+                None => indent.truncate(indent.len() - 2),
+                Some((key, ValveToken::Object)) => {
+                    println!("{}{}:", indent, key);
+                    indent += "  ";
+                }
+                Some((key, value)) => {
+                    println!("{}{}: {:?}", indent, key, value);
+                }
+            }
+        }
+    }
+
+    Ok(())
 }

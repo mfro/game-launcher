@@ -1,5 +1,6 @@
 use std::{
-    cell::RefCell, cmp::Ordering, fs::File, io::BufReader, path::Path, path::PathBuf, rc::Rc,
+    cell::RefCell, cmp::Ordering, fmt::Debug, fs::File, io::BufReader, path::Path, path::PathBuf,
+    rc::Rc,
 };
 
 use cef::{v8, CefV8Context, CefV8Propertyattribute, CefV8Value};
@@ -139,7 +140,7 @@ impl Search {
 
     fn include_helper<K, P>(&mut self, index: &Rc<RefCell<IndexFile>>, provider: &P, new: Vec<K>)
     where
-        K: 'static + Clone + Eq,
+        K: 'static + Clone + Eq + Debug,
         P: SearchProvider<K>,
         Index: IndexType<K>,
     {
@@ -147,7 +148,7 @@ impl Search {
         let index_mut = &mut index_mut.index;
 
         for target in new {
-            if index_mut.get_save().iter().any(|x| x.target == target) {
+            if index_mut.targets().iter().any(|x| x.target == target) {
                 continue;
             }
 
@@ -155,7 +156,7 @@ impl Search {
         }
 
         let entries = index_mut
-            .get_save()
+            .targets()
             .iter()
             .map(|e| e.prepare(index.clone(), provider));
 
@@ -237,13 +238,13 @@ impl Search<CefV8Value> {
 #[derive(Serialize, Deserialize, Clone)]
 struct IndexEntry<K> {
     target: K,
-    icon: Option<String>,
+    icon: String,
     counter: u64,
 }
 
 impl<K> IndexEntry<K>
 where
-    K: 'static + Clone + Eq,
+    K: 'static + Clone + Eq + Debug,
 {
     fn prepare<P>(&self, index: Rc<RefCell<IndexFile>>, provider: &P) -> (Key, Target)
     where
@@ -270,11 +271,8 @@ where
             index.save();
         });
 
-        let display_icon = self.icon.as_ref().and_then(|id| {
-            crate::attempt(
-                || format!("open cached icon {}", id),
-                || Ok(image::open(id)?),
-            )
+        let display_icon = crate::attempt!(("open cached icon {} {:?}", self.icon, self.target), {
+            image::open(&self.icon)?
         });
 
         let target = Target {
@@ -307,13 +305,8 @@ impl Index {
             let icon = icon.to_rgba();
 
             let filter = if icon.dimensions().0 <= 32 {
-                // println!("{}: {}", index.keys(key)[0], icon.dimensions().0);
                 FilterType::Nearest
             } else {
-                // if icon.dimensions().0 < 64 {
-                //     println!("{}: {}", index.keys(key)[0], icon.dimensions().0)
-                // }
-
                 FilterType::CatmullRom
             };
 
@@ -325,16 +318,13 @@ impl Index {
             DynamicImage::ImageRgba8(out)
         });
 
-        let icon = display_icon.as_ref().and_then(|image| {
-            crate::attempt(
-                || format!("save cached icon {:?}", provider.keys(&target)),
-                || {
-                    let icon_name = format!("icons/{}.png", self.next_icon);
-                    image.save(&icon_name)?;
-                    self.next_icon += 1;
-                    Ok(icon_name)
-                },
-            )
+        let icon = format!("icons/{}.png", self.next_icon);
+        self.next_icon += 1;
+
+        display_icon.as_ref().and_then(|image| {
+            crate::attempt!(("save cached icon {:?}", provider.keys(&target)), {
+                image.save(&icon)?
+            })
         });
 
         let entry = IndexEntry {
@@ -343,7 +333,7 @@ impl Index {
             counter: 0,
         };
 
-        self.get_save_mut().push(entry);
+        self.targets_mut().push(entry);
     }
 
     fn get_entry<K>(&mut self, key: &K) -> &mut IndexEntry<K>
@@ -351,7 +341,7 @@ impl Index {
         K: Clone + Eq,
         Index: IndexType<K>,
     {
-        let list = self.get_save_mut();
+        let list = self.targets_mut();
         let existing = list.iter_mut().find(|x| x.target == *key);
 
         existing.unwrap()
@@ -365,14 +355,10 @@ struct IndexFile {
 
 impl IndexFile {
     pub fn open(path: PathBuf) -> IndexFile {
-        let index = crate::attempt(
-            || format!("load index"),
-            || {
-                let src = BufReader::new(File::open(&path)?);
-                let index = serde_json::from_reader(src)?;
-                Ok(index)
-            },
-        );
+        let index = crate::attempt!(("load index"), {
+            let src = BufReader::new(File::open(&path)?);
+            serde_json::from_reader(src)?
+        });
 
         let index = index.unwrap_or_default();
 
@@ -380,30 +366,26 @@ impl IndexFile {
     }
 
     pub fn save(&self) {
-        crate::attempt(
-            || format!("save index"),
-            || {
-                let dst = File::create(&self.path)?;
-                serde_json::to_writer(dst, &self.index)?;
-                Ok(())
-            },
-        );
+        crate::attempt!(("save index"), {
+            let dst = File::create(&self.path)?;
+            serde_json::to_writer(dst, &self.index)?;
+        });
     }
 }
 
 trait IndexType<K: Clone + Eq> {
-    fn get_save(&self) -> &[IndexEntry<K>];
-    fn get_save_mut(&mut self) -> &mut Vec<IndexEntry<K>>;
+    fn targets(&self) -> &[IndexEntry<K>];
+    fn targets_mut(&mut self) -> &mut Vec<IndexEntry<K>>;
 }
 
 macro_rules! save_state {
     ( $name:ident, $key:ty ) => {
         impl IndexType<$key> for Index {
-            fn get_save(&self) -> &[IndexEntry<$key>] {
+            fn targets(&self) -> &[IndexEntry<$key>] {
                 &self.$name
             }
 
-            fn get_save_mut(&mut self) -> &mut Vec<IndexEntry<$key>> {
+            fn targets_mut(&mut self) -> &mut Vec<IndexEntry<$key>> {
                 &mut self.$name
             }
         }
