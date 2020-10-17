@@ -18,7 +18,7 @@ watchEffect(() => {
     state.matches = markRaw(matches);
 });
 
-// window.addEventListener('blur', e => hide(true));
+window.addEventListener('blur', e => hide(true));
 
 window.addEventListener('focus', e => {
     state.instance.$refs.input.focus();

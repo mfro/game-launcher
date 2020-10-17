@@ -97,7 +97,7 @@ impl From<Scalar> for String {
     }
 }
 
-pub struct SteamIndex {
+pub struct SteamProvider {
     steam_dir: PathBuf,
     app_info: HashMap<u32, AppInfo>,
 }
@@ -109,8 +109,8 @@ pub struct SteamTarget {
     install_dir: PathBuf,
 }
 
-impl SteamIndex {
-    pub fn new<P: AsRef<Path>>(steam_dir: P) -> SteamIndex {
+impl SteamProvider {
+    pub fn new<P: AsRef<Path>>(steam_dir: P) -> SteamProvider {
         let steam_dir = steam_dir.as_ref();
 
         let app_info = crate::attempt!(("read appinfo.vdf {:?}", steam_dir), {
@@ -135,7 +135,7 @@ impl SteamIndex {
         })
         .unwrap_or_default();
 
-        SteamIndex {
+        SteamProvider {
             steam_dir: steam_dir.to_owned(),
             app_info,
         }
@@ -230,7 +230,7 @@ impl SteamIndex {
     }
 }
 
-impl SearchProvider<SteamTarget> for SteamIndex {
+impl SearchProvider<SteamTarget> for SteamProvider {
     fn keys(&self, entry: &SteamTarget) -> Vec<String> {
         vec![entry.name.clone()]
     }
@@ -271,8 +271,9 @@ impl SearchProvider<SteamTarget> for SteamIndex {
 
                 crate::attempt!(("load steam icon {:?}", exe_path), {
                     let data = extract_icons(&exe_path)?;
+                    let data = data.get(0)?;
 
-                    let r = Cursor::new(&data[0]);
+                    let r = Cursor::new(&data);
                     let decoder = IcoDecoder::new_unchecked(r)?;
                     DynamicImage::from_decoder(decoder)?
                 })

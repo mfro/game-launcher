@@ -14,3 +14,6 @@ Indexing ideas:
 
 ranking ideas:
     - launch date
+
+
+https://devblogs.microsoft.com/oldnewthing/20140120-00/?p=2043

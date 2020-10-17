@@ -10,7 +10,7 @@ use crate::common::{RecursiveSearch, ToWide};
 
 use super::SearchProvider;
 
-pub struct StartMenuIndex {}
+pub struct StartMenuProvider {}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Hash)]
 pub struct StartMenuTarget {
@@ -19,9 +19,9 @@ pub struct StartMenuTarget {
     lnk_path: PathBuf,
 }
 
-impl StartMenuIndex {
-    pub fn new() -> StartMenuIndex {
-        StartMenuIndex {}
+impl StartMenuProvider {
+    pub fn new() -> StartMenuProvider {
+        StartMenuProvider {}
     }
 
     pub fn index(&self) -> Vec<StartMenuTarget> {
@@ -117,7 +117,7 @@ impl StartMenuIndex {
     }
 }
 
-impl SearchProvider<StartMenuTarget> for StartMenuIndex {
+impl SearchProvider<StartMenuTarget> for StartMenuProvider {
     fn keys(&self, entry: &StartMenuTarget) -> Vec<String> {
         let relative = match entry.relative.rfind('.') {
             Some(i) => entry.relative[..i].to_owned(),

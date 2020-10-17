@@ -354,7 +354,7 @@ pub fn luminance(i: &[f64; 3]) -> f64 {
     r * 0.2129 + g * 0.7152 + b * 0.0722
 }
 
-pub struct AppxIndex {
+pub struct AppxProvider {
     pm: PackageManager,
 }
 
@@ -365,10 +365,10 @@ pub struct AppxTarget {
     launch_id: String,
 }
 
-impl AppxIndex {
-    pub fn new() -> AppxIndex {
+impl AppxProvider {
+    pub fn new() -> AppxProvider {
         let pm = PackageManager::new().unwrap();
-        AppxIndex { pm }
+        AppxProvider { pm }
     }
 
     pub fn index(&self) -> Vec<AppxTarget> {
@@ -389,7 +389,7 @@ impl AppxIndex {
     }
 }
 
-impl SearchProvider<AppxTarget> for AppxIndex {
+impl SearchProvider<AppxTarget> for AppxProvider {
     fn keys(&self, entry: &AppxTarget) -> Vec<String> {
         vec![entry.name.clone()]
     }

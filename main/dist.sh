@@ -3,6 +3,7 @@ mkdir "dist"
 
 cp -r "config.yaml" "dist"
 cp -r "extern"/* "dist"
+mkdir "dist/icons"
 
 cp -r "$CEF_ROOT"/Release/*.dll "dist"
 cp -r "$CEF_ROOT"/Release/*.bin "dist"

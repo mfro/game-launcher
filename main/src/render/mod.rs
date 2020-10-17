@@ -4,9 +4,9 @@ use cef::{
     v8, CefBrowser, CefFrame, CefProcessId, CefProcessMessage, CefV8Context,
     CefV8Propertyattribute, CefV8Value, RenderProcessHandler,
 };
-use search::Search;
 
 pub mod search;
+use search::{Provider, Search};
 
 thread_local! {
     static HOOK_CALLBACKS: RefCell<Vec<v8::V8Function>> = Default::default();
@@ -28,12 +28,20 @@ impl RenderProcessHandler for MyRenderProcessHandler {
     ) -> () {
         let a = Instant::now();
 
-        let search = Search::load("index.json");
+        let provider = Provider::new();
+        let mut search = Search::load(&provider, "index.json".into());
+
+        search.include(&provider, provider.config.index());
+        search.include(&provider, provider.appx.index());
+        search.include(&provider, provider.steam.index());
+        search.include(&provider, provider.start_menu.index());
+
+        search.save();
 
         let b = Instant::now();
         println!("created search index: {:?}", b - a);
 
-        let search = search.into_cef(&context);
+        let search = search.into_cef(&context, &provider);
 
         let c = Instant::now();
         println!("prepared search index: {:?}", c - b);
@@ -51,7 +59,35 @@ impl RenderProcessHandler for MyRenderProcessHandler {
         root_object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
 
         let key = "search";
-        let search_fn = move |query: String| search.search_cef(&query);
+        let search_fn = move |query: String| {
+            let search = search.borrow();
+            let matches = search.search(&query.to_lowercase());
+
+            let limit = 7.min(matches.len());
+            let display = matches.into_iter().take(limit);
+
+            v8::v8_array(display.map(|m| {
+                let object = CefV8Value::create_object(None, None).unwrap();
+
+                let key = "key";
+                let value = m.key;
+                object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
+
+                let key = "start";
+                let value = m.index;
+                object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
+
+                let key = "end";
+                let value = m.index + query.len();
+                object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
+
+                let key = "target";
+                let value = m.value.data.clone();
+                object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
+
+                object
+            }))
+        };
         let value = v8::v8_function1(key.clone(), search_fn);
         root_object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
 
