@@ -20,7 +20,10 @@ extern crate flat;
 #[macro_use]
 extern crate serde_derive;
 
-use std::{fmt::Debug, fs::OpenOptions, io::Error, io::ErrorKind, io::prelude::*, path::Path, path::PathBuf};
+use std::{
+    fmt::Debug, fs::OpenOptions, io::prelude::*, io::Error, io::ErrorKind, path::Path,
+    path::PathBuf,
+};
 
 use backtrace::Backtrace;
 use cef::{
@@ -163,4 +166,19 @@ impl<T: 'static + Debug> From<T> for MyError {
         let trace = Backtrace::new();
         MyError { inner, trace }
     }
+}
+
+#[macro_export]
+macro_rules! mark {
+    ( $format:tt, $name:ident ) => {
+        crate::mark!($format, $name,);
+    };
+
+    ( $format:tt, $name:ident, $($arg:tt)* ) => {
+        let $name = {
+            let tmp = ::std::time::Instant::now();
+            println!($format, tmp - $name, $( $arg )* );
+            tmp
+        };
+    };
 }
