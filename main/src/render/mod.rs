@@ -1,6 +1,5 @@
 use std::{cell::RefCell, rc::Rc, time::Instant};
 
-use assets::AssetFactory;
 use cef::{
     v8, CefBrowser, CefFrame, CefProcessId, CefProcessMessage, CefV8Context,
     CefV8Propertyattribute, CefV8Value, RenderProcessHandler,
@@ -10,7 +9,8 @@ pub mod search;
 use image::ImageOutputFormat;
 use search::{AnyTarget, Index, Match, Provider, SearchProvider};
 
-mod assets;
+pub mod cef_image;
+use cef_image::CefImageFactory;
 
 thread_local! {
     static HOOK_CALLBACKS: RefCell<Vec<v8::V8Function>> = Default::default();
@@ -30,40 +30,24 @@ impl RenderProcessHandler for MyRenderProcessHandler {
         _frame: CefFrame,
         context: CefV8Context,
     ) -> () {
-        let mark = Instant::now();
+        let _mark = Instant::now();
 
         let provider = Provider::new();
 
-        let mut index = Index::open(provider, "index.json".into());
-        crate::mark!("open index: {:?}", mark);
-
-        index.include(index.provider.config.index());
-        crate::mark!("index config: {:?}", mark);
-
-        index.include(index.provider.appx.index());
-        crate::mark!("index appx: {:?}", mark);
-
-        index.include(index.provider.steam.index());
-        crate::mark!("index steam: {:?}", mark);
-
-        index.include(index.provider.start_menu.index());
-        crate::mark!("index start menu: {:?}", mark);
-
+        let index = Index::open(provider, "index.json".into());
         index.save();
 
-        let b = Instant::now();
-        println!("created search index: {:?}", b - mark);
+        crate::mark!("created search index: {:?}", _mark);
 
         let rc = Rc::new(RefCell::new(index));
-        let assets = AssetFactory::new(&context);
+        let assets = CefImageFactory::new(&context);
         let objects: Vec<_> = rc
-            .borrow()
-            .iter()
+            .index()
+            .into_iter()
             .map(|index| make_cef_target(rc.clone(), &assets, index))
             .collect();
 
-        let c = Instant::now();
-        println!("created object cache: {:?}", c - b);
+        crate::mark!("created object cache: {:?}", _mark);
 
         let root_object = CefV8Value::create_object(None, None).unwrap();
 
@@ -73,8 +57,8 @@ impl RenderProcessHandler for MyRenderProcessHandler {
 
         let key = "toggle";
         let main_frame = browser.get_main_frame().unwrap();
-        let value = move |state| toggle(&main_frame, state);
-        let value = v8::v8_function1(key.clone(), value);
+        let toggle_fn = move |state| toggle(&main_frame, state);
+        let value = v8::v8_function1(key.clone(), toggle_fn);
         root_object.set_value_bykey(Some(&key.into()), value, CefV8Propertyattribute::NONE);
 
         let key = "search";
@@ -144,7 +128,7 @@ fn toggle(main_frame: &CefFrame, state: i32) {
 
 pub fn make_cef_target(
     rc: Rc<RefCell<Index<AnyTarget, Provider>>>,
-    assets: &AssetFactory,
+    assets: &CefImageFactory,
     index: usize,
 ) -> CefV8Value {
     let object = CefV8Value::create_object(None, None).unwrap();

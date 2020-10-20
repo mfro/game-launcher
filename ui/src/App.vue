@@ -6,6 +6,10 @@
       <div class="background" :style="menuStyle" />
 
       <div class="search-bar">
+        <div class="cover" />
+
+        <div class="bar" />
+
         <input
           ref="input"
           type="text"
@@ -26,6 +30,7 @@
               :target="match.target"
               name
               hint
+              :launch="launching"
             />
           </div>
         </div>
@@ -37,6 +42,7 @@
               :key="i"
               :target="match.target"
               icon
+              :launch="launching && match == selected"
             />
           </div>
         </div>
@@ -75,6 +81,7 @@ export default {
       state,
       index: 0,
       sliding: false,
+      launching: true,
     };
   },
 
@@ -162,11 +169,15 @@ export default {
     reset() {
       state.search = '';
       this.index = 0;
+      this.launching = false;
     },
 
     submit() {
-      this.selected.target.launch();
-      hide(false);
+      if (this.selected) {
+        this.launching = true;
+        this.selected.target.launch();
+        hide(false);
+      }
     },
 
     onInput(e) {
@@ -227,6 +238,8 @@ export default {
 <style lang="scss" scoped>
 @import "common.scss";
 
+$background-color: #bdbdbd;
+
 canvas {
   display: none;
 }
@@ -235,7 +248,7 @@ canvas {
   width: 100vw;
   height: 100vh;
 
-  padding-top: (68px * 6 + 8px) ;
+  padding-top: (68px * 6 + 8px);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -254,7 +267,7 @@ canvas {
       height: 100%;
       position: absolute;
       border-radius: 5px;
-      background-color: #bdbdbd;
+      background-color: $background-color;
       box-shadow: 0 0 10px -5px currentColor;
     }
 
@@ -269,12 +282,32 @@ canvas {
       left: 0;
 
       position: absolute;
-      border-radius: 5px;
-      background-color: white;
-      box-shadow: 0 0 10px -5px currentColor;
 
       display: flex;
       flex-direction: column;
+
+      > .cover {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+
+        border-radius: 5px;
+        background-color: $background-color;
+      }
+
+      > .bar {
+        border-radius: 5px;
+        background-color: white;
+        box-shadow: 0 0 10px -5px currentColor;
+
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+      }
 
       > input {
         @include text-title;

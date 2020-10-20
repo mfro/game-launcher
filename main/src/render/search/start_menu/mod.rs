@@ -1,6 +1,6 @@
-use std::{fs::File, io::Cursor, io::Error, io::ErrorKind, io::prelude::*, path::PathBuf};
+use std::{fs::File, io::prelude::*, io::Cursor, io::Error, io::ErrorKind, path::PathBuf};
 
-use image::{DynamicImage, ico::IcoDecoder};
+use image::{ico::IcoDecoder, DynamicImage};
 use winapi::um::shellapi::ShellExecuteW;
 
 mod lnk;
@@ -9,6 +9,9 @@ use lnk::ShellLink;
 use crate::common::{RecursiveSearch, ToWide};
 
 use super::SearchProvider;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct StartMenuConfig {}
 
 pub struct StartMenuProvider {}
 
@@ -20,11 +23,13 @@ pub struct StartMenuTarget {
 }
 
 impl StartMenuProvider {
-    pub fn new() -> StartMenuProvider {
+    pub fn new(_config: &StartMenuConfig) -> StartMenuProvider {
         StartMenuProvider {}
     }
+}
 
-    pub fn index(&self) -> Vec<StartMenuTarget> {
+impl SearchProvider<StartMenuTarget> for StartMenuProvider {
+    fn index(&self) -> Vec<StartMenuTarget> {
         let appdata = std::env::var("APPDATA").unwrap();
         let roots = [
             PathBuf::from(r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs"),
@@ -115,9 +120,7 @@ impl StartMenuProvider {
             })
             .collect()
     }
-}
 
-impl SearchProvider<StartMenuTarget> for StartMenuProvider {
     fn keys(&self, entry: &StartMenuTarget) -> Vec<String> {
         let relative = match entry.relative.rfind('.') {
             Some(i) => entry.relative[..i].to_owned(),

@@ -20,6 +20,8 @@ use steam::{SteamProvider, SteamTarget};
 pub type MatchScore = (usize, usize, u64);
 
 pub trait SearchProvider<K> {
+    fn index(&self) -> Vec<K>;
+
     fn keys(&self, target: &K) -> Vec<String>;
     fn launch(&self, target: &K) -> Box<dyn Fn()>;
     fn details(&self, target: &K) -> String;
@@ -68,7 +70,7 @@ impl<T> IndexEntry<T> {
                 let char_index = lower
                     .char_indices()
                     .position(|(idx, _)| idx == byte_index)
-                    .unwrap();
+                    .expect("char index mismatch");
 
                 let chars: Vec<_> = lower.chars().take(char_index).collect();
                 let word_index = chars.iter().filter(|&&c| c == ' ').count();
@@ -112,17 +114,63 @@ where
         });
 
         let save: IndexSave<T> = save.unwrap_or_default();
+        let mut meta = save.meta;
 
-        let meta = save.meta;
-        let entries = save
+        // 1. build the index
+        let mut from_index = provider.index();
+
+        // 2. load saved entries that still exist (are in the index)
+        let mut from_save: Vec<_> = save
             .entries
             .into_iter()
+            .filter(|e| match from_index.iter().position(|x| *x == e.target) {
+                None => false,
+                Some(i) => {
+                    from_index.remove(i);
+                    true
+                }
+            })
             .map(|src| IndexEntry::new(&provider, src.meta, src.target))
             .collect();
 
+        // 3. create index entries that were not in the save.
+        from_save.extend(from_index.into_iter().filter_map(|target| {
+            let target = target.into();
+
+            let display_icon = provider.display_icon(&target).map(|icon| {
+                let icon = icon.to_rgba();
+
+                let filter = if icon.dimensions().0 <= 32 {
+                    FilterType::Nearest
+                } else {
+                    FilterType::CatmullRom
+                };
+
+                let scaled = image::imageops::resize(&icon, 64, 64, filter);
+
+                let mut out = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
+                image::imageops::overlay(&mut out, &scaled, 0, 0);
+
+                DynamicImage::ImageRgba8(out)
+            });
+
+            let icon = format!("icons/{}.png", meta.next_icon);
+            meta.next_icon += 1;
+
+            display_icon.as_ref().and_then(|image| {
+                crate::attempt!(("save cached icon {:?}", provider.keys(&target)), {
+                    image.save(&icon)?
+                })
+            });
+
+            let meta = IndexEntryMeta { icon, counter: 0 };
+
+            Some(IndexEntry::new(&provider, meta, target))
+        }));
+
         Index {
             meta,
-            entries,
+            entries: from_save,
             provider,
             save_path,
         }
@@ -148,52 +196,6 @@ where
             let src = File::create(&self.save_path)?;
             serde_json::to_writer(src, &save)?;
         });
-    }
-
-    pub fn include(&mut self, targets: impl IntoIterator<Item = impl Into<T>>) {
-        let mut values = targets
-            .into_iter()
-            .filter_map(|target| {
-                let target = target.into();
-
-                let existing = self.entries.iter().any(|a| a.target == target);
-                if existing {
-                    return None;
-                }
-
-                let display_icon = self.provider.display_icon(&target).map(|icon| {
-                    let icon = icon.to_rgba();
-
-                    let filter = if icon.dimensions().0 <= 32 {
-                        FilterType::Nearest
-                    } else {
-                        FilterType::CatmullRom
-                    };
-
-                    let scaled = image::imageops::resize(&icon, 64, 64, filter);
-
-                    let mut out = image::RgbaImage::from_pixel(64, 64, [0; 4].into());
-                    image::imageops::overlay(&mut out, &scaled, 0, 0);
-
-                    DynamicImage::ImageRgba8(out)
-                });
-
-                let icon = format!("icons/{}.png", self.meta.next_icon);
-                self.meta.next_icon += 1;
-
-                display_icon.as_ref().and_then(|image| {
-                    crate::attempt!(("save cached icon {:?}", self.provider.keys(&target)), {
-                        image.save(&icon)?
-                    })
-                });
-
-                let meta = IndexEntryMeta { icon, counter: 0 };
-
-                Some(IndexEntry::new(&self.provider, meta, target))
-            })
-            .collect();
-
-        self.entries.append(&mut values);
     }
 
     pub fn search(&self, query: &str) -> Vec<Match<usize>> {
@@ -222,10 +224,6 @@ where
 
         matches
     }
-
-    pub fn iter(&self) -> impl Iterator<Item = usize> {
-        0..self.entries.len()
-    }
 }
 
 impl<T, P> SearchProvider<usize> for Rc<RefCell<Index<T, P>>>
@@ -233,6 +231,10 @@ where
     T: 'static + Serialize + DeserializeOwned + Clone + Eq + Debug,
     P: 'static + SearchProvider<T>,
 {
+    fn index(&self) -> Vec<usize> {
+        (0..self.borrow().entries.len()).collect()
+    }
+
     fn keys(&self, &target: &usize) -> Vec<String> {
         let this = self.borrow();
         let entry = &this.entries[target];
@@ -309,31 +311,43 @@ macro_rules! any_search {
         )*
 
         pub struct Provider {
-            $( pub $name: $provider ),*
+            $( pub $name: Option<$provider> ),*
         }
 
         impl SearchProvider<AnyTarget> for Provider {
+            fn index(&self) -> Vec<AnyTarget> {
+                let mut vec = vec![];
+
+                $(
+                    if let Some(x) = &self.$name {
+                        vec.extend(x.index().into_iter().map(|x| x.into()))
+                    }
+                )*
+
+                vec
+            }
+
             fn keys(&self, target: &AnyTarget) -> Vec<String> {
                 match target {
-                    $( AnyTarget::$variant(t) => self.$name.keys(t), )*
+                    $( AnyTarget::$variant(t) => self.$name.as_ref().unwrap().keys(t), )*
                 }
             }
 
             fn launch(&self, target: &AnyTarget) -> Box<dyn Fn()> {
                 match target {
-                    $( AnyTarget::$variant(t) => self.$name.launch(t), )*
+                    $( AnyTarget::$variant(t) => self.$name.as_ref().unwrap().launch(t), )*
                 }
             }
 
             fn details(&self, target: &AnyTarget) -> String {
                 match target {
-                    $( AnyTarget::$variant(t) => self.$name.details(t), )*
+                    $( AnyTarget::$variant(t) => self.$name.as_ref().unwrap().details(t), )*
                 }
             }
 
             fn display_icon(&self, target: &AnyTarget) -> Option<DynamicImage> {
                 match target {
-                    $( AnyTarget::$variant(t) => self.$name.display_icon(t), )*
+                    $( AnyTarget::$variant(t) => self.$name.as_ref().unwrap().display_icon(t), )*
                 }
             }
         }
@@ -350,26 +364,15 @@ any_search!(
 impl Provider {
     pub fn new() -> Provider {
         let config = SearchConfig::load();
+        let appx = config.appx.as_ref().map(AppxProvider::new);
+        let steam = config.steam.as_ref().map(SteamProvider::new);
+        let start_menu = config.start_menu.as_ref().map(StartMenuProvider::new);
 
-        if config.index_appx {
-            let appx = AppxProvider::new();
-
-            if let Some(root) = &config.index_steam {
-                let steam = SteamProvider::new(root);
-
-                if config.index_start_menu {
-                    let start_menu = StartMenuProvider::new();
-
-                    return Provider {
-                        config,
-                        appx,
-                        steam,
-                        start_menu,
-                    };
-                }
-            }
+        Provider {
+            config: Some(config),
+            appx,
+            steam,
+            start_menu,
         }
-
-        panic!()
     }
 }

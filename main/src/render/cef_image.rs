@@ -1,11 +1,11 @@
 use cef::{CefV8Context, CefV8Value, V8ArrayBufferReleaseCallback};
 
-pub struct AssetFactory {
+pub struct CefImageFactory {
     factory: CefV8Value,
 }
 
-impl AssetFactory {
-    pub fn new(ctx: &CefV8Context) -> AssetFactory {
+impl CefImageFactory {
+    pub fn new(ctx: &CefV8Context) -> CefImageFactory {
         // CEF/Chromium crashes when using an external ArrayBuffer in a blob for some reason
         // so slice() to copy it to a V8/JS managed ArrayBuffer
         let js = "window._asset_factory = (type, data) => {
@@ -20,12 +20,13 @@ impl AssetFactory {
         let mut error = None;
         ctx.eval(&js.into(), None, 0, &mut retval, &mut error);
         if let Some(e) = error {
-            println!("{}", e.get_message());
+            crate::log!("{}", e.get_message());
+            panic!("{}", e.get_message());
         }
 
         let factory = retval.unwrap();
 
-        AssetFactory { factory }
+        CefImageFactory { factory }
     }
 
     pub fn create_asset(&self, mime: &str, data: &mut [u8]) -> CefV8Value {

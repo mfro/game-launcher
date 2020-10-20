@@ -1,22 +1,22 @@
 use std::{fs::File, io::prelude::*, process::Command};
 
-use super::SearchProvider;
+use super::{appx::AppxConfig, start_menu::StartMenuConfig, steam::SteamConfig, SearchProvider};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SearchConfig {
-    pub index_steam: Option<String>,
-    pub index_appx: bool,
-    pub index_start_menu: bool,
-    pub index_manual: Vec<ManualTarget>,
+    pub appx: Option<AppxConfig>,
+    pub steam: Option<SteamConfig>,
+    pub start_menu: Option<StartMenuConfig>,
+    pub custom: Vec<ManualTarget>,
 }
 
 impl Default for SearchConfig {
     fn default() -> Self {
         SearchConfig {
-            index_steam: None,
-            index_appx: true,
-            index_start_menu: true,
-            index_manual: vec![],
+            appx: None,
+            steam: None,
+            start_menu: None,
+            custom: vec![],
         }
     }
 }
@@ -40,13 +40,11 @@ pub struct ManualTarget {
     icon: Option<String>,
 }
 
-impl SearchConfig {
-    pub fn index(&self) -> Vec<ManualTarget> {
-        self.index_manual.clone()
-    }
-}
-
 impl SearchProvider<ManualTarget> for SearchConfig {
+    fn index(&self) -> Vec<ManualTarget> {
+        self.custom.clone()
+    }
+
     fn keys(&self, entry: &ManualTarget) -> Vec<String> {
         entry.names.clone()
     }

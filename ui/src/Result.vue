@@ -1,5 +1,5 @@
 <template>
-  <div class="result">
+  <div class="result" :class="{ launch }">
     <div class="icon" ref="icon" />
 
     <div class="content">
@@ -31,6 +31,7 @@ export default {
     name: { type: Boolean, default: false },
     icon: { type: Boolean, default: false },
     hint: { type: Boolean, default: false },
+    launch: { type: Boolean, default: false },
   },
 
   computed: {
@@ -79,6 +80,11 @@ export default {
 
 .result {
   display: flex;
+
+  &.launch {
+    transition: transform 250ms ease-in;
+    transform: translateX(1000px);
+  }
 
   > .content {
     height: 80px;

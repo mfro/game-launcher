@@ -50,7 +50,7 @@ fn list_start_apps() -> Vec<u8> {
     let cmd = "Get-StartApps \
         | ForEach-Object { \"{0} {1}{2} {3}\" -f $_.Name.Length,$_.Name,$_.AppId.Length,$_.AppId }";
 
-    powershell(cmd).unwrap()
+    powershell(cmd).expect("failed to run powershell Get-StartApps")
 }
 
 #[derive(Deserialize, Debug)]
@@ -201,10 +201,11 @@ struct VisualElements {
 }
 
 #[allow(non_upper_case_globals)]
-fn load_pri<P: AsRef<OsStr>>(path: P) -> PriInfo {
+fn load_pri<P: AsRef<OsStr>>(path: P) -> std::result::Result<PriInfo, Box<dyn std::error::Error>> {
     // TODO: this function is slow //
     lazy_static! {
-        static ref mrmsupport: Dll = Dll::load("mrmsupport.dll").unwrap();
+        static ref mrmsupport: Dll =
+            Dll::load("mrmsupport.dll").expect("failed to load mrmsupport.dll");
         static ref MrmDumpPriFileInMemory: unsafe extern "system" fn(
             *const u16,
             *const u16,
@@ -212,10 +213,19 @@ fn load_pri<P: AsRef<OsStr>>(path: P) -> PriInfo {
             *mut *mut u8,
             *mut std::os::raw::c_ulong,
         ) -> HRESULT = unsafe {
-            std::mem::transmute(mrmsupport.get_function("MrmDumpPriFileInMemory").unwrap())
+            let ptr = mrmsupport
+                .get_function("MrmDumpPriFileInMemory")
+                .expect("failed to GetProcAddr MrmDumpPriFileInMemory");
+
+            std::mem::transmute(ptr)
         };
-        static ref MrmFreeMemory: unsafe extern "system" fn(*mut u8) -> HRESULT =
-            unsafe { std::mem::transmute(mrmsupport.get_function("MrmFreeMemory").unwrap()) };
+        static ref MrmFreeMemory: unsafe extern "system" fn(*mut u8) -> HRESULT = unsafe {
+            let ptr = mrmsupport
+                .get_function("MrmFreeMemory")
+                .expect("failed to GetProcAddr MrmFreeMemory");
+
+            std::mem::transmute(ptr)
+        };
     }
 
     let raw = path.as_ref().to_wide();
@@ -232,12 +242,12 @@ fn load_pri<P: AsRef<OsStr>>(path: P) -> PriInfo {
         std::slice::from_raw_parts_mut(out_data, out_size as usize)
     };
 
-    let xml = std::str::from_utf8(data).unwrap();
-    let parsed = quick_xml::de::from_str(xml).unwrap();
+    let xml = std::str::from_utf8(data)?;
+    let parsed = quick_xml::de::from_str(xml)?;
 
     unsafe { MrmFreeMemory(out_data) };
 
-    parsed
+    Ok(parsed)
 }
 
 fn find_resource<'a>(pris: &'a [PriInfo], name: &str, white: bool) -> Option<&'a str> {
@@ -354,6 +364,9 @@ pub fn luminance(i: &[f64; 3]) -> f64 {
     r * 0.2129 + g * 0.7152 + b * 0.0722
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AppxConfig {}
+
 pub struct AppxProvider {
     pm: PackageManager,
 }
@@ -366,15 +379,17 @@ pub struct AppxTarget {
 }
 
 impl AppxProvider {
-    pub fn new() -> AppxProvider {
-        let pm = PackageManager::new().unwrap();
+    pub fn new(_config: &AppxConfig) -> AppxProvider {
+        let pm = PackageManager::new().expect("failed to create PackageManager");
         AppxProvider { pm }
     }
+}
 
-    pub fn index(&self) -> Vec<AppxTarget> {
+impl SearchProvider<AppxTarget> for AppxProvider {
+    fn index(&self) -> Vec<AppxTarget> {
         let raw = list_start_apps();
         std::str::from_utf8(&raw)
-            .unwrap()
+            .expect("invalid Get-StartApps output")
             .split('\n')
             .map(|line| line.trim())
             .filter(|line| line.len() > 0)
@@ -387,9 +402,7 @@ impl AppxProvider {
             .filter(|target| target.launch_id.contains('!'))
             .collect()
     }
-}
 
-impl SearchProvider<AppxTarget> for AppxProvider {
     fn keys(&self, entry: &AppxTarget) -> Vec<String> {
         vec![entry.name.clone()]
     }
@@ -409,7 +422,8 @@ impl SearchProvider<AppxTarget> for AppxProvider {
 
             unsafe {
                 std::thread::spawn(move || {
-                    let am = create_instance::<dyn IApplicationActivationManager>(&CLSID).unwrap();
+                    let am = create_instance::<dyn IApplicationActivationManager>(&CLSID)
+                        .expect("failed to instantiate ApplicationActivationManager");
 
                     let mut process_id = 0;
                     am.activate_application(raw.as_ptr(), std::ptr::null(), 0, &mut process_id);
@@ -487,10 +501,7 @@ impl SearchProvider<AppxTarget> for AppxProvider {
             .iter()
             .filter_map(|relative| {
                 let path = path.join(relative);
-                match path.exists() {
-                    true => Some(load_pri(path)),
-                    false => None,
-                }
+                crate::attempt!(("load pri {}", relative), load_pri(path)?)
             })
             .collect();
 

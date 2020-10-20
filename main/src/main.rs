@@ -129,9 +129,9 @@ pub(crate) fn log(a: &str) {
 
 #[macro_export]
 macro_rules! attempt {
-    ( $action:expr ) => {
-        crate::attempt(None, || Ok($action))
-    };
+    // ( $action:expr ) => {
+    //     crate::attempt(None, || Ok($action))
+    // };
 
     ( ( $($arg:tt)* ), $action:expr ) => {
         crate::attempt(Some(|| format!( $( $arg )* )), || Ok($action))

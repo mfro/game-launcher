@@ -1,6 +1,7 @@
-index_steam: C:\Program Files (x86)\Steam
-index_appx: true
-index_start_menu: true
-index_manual:
+appx: {}
+steam:
+  path: C:\Program Files (x86)\Steam
+start_menu: {}
+custom:
   - names: [hello friend]
     target: [C:\Windows\system32\cmd.exe,/C,start cmd.exe /C echo hello friend :) ^&^& pause ^> NUL]
