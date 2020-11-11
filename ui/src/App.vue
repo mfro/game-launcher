@@ -81,7 +81,7 @@ export default {
       state,
       index: 0,
       sliding: false,
-      launching: true,
+      launching: false,
     };
   },
 
